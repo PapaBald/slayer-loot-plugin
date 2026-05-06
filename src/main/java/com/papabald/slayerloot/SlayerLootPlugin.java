@@ -5,8 +5,10 @@ import com.google.gson.JsonSyntaxException;
 import com.google.inject.Provides;
 import java.awt.image.BufferedImage;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -17,8 +19,9 @@ import net.runelite.api.ItemComposition;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.StatChanged;
-import net.runelite.api.widgets.Widget;
-import net.runelite.api.widgets.WidgetInfo;
+import net.runelite.api.gameval.DBTableID;
+import net.runelite.api.gameval.VarPlayerID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -28,6 +31,7 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.Text;
 import net.runelite.client.game.ItemStack;
@@ -40,7 +44,8 @@ import net.runelite.client.game.ItemStack;
 public class SlayerLootPlugin extends Plugin
 {
     private static final String DEFAULT_TASK = "Unknown Task";
-    private static final Pattern ASSIGNMENT_PATTERN = Pattern.compile("(?i)you are assigned to kill (.+?)(?:\\.|;).*");
+    private static final Pattern ASSIGNMENT_PATTERN = Pattern.compile("(?i)(?:you(?:'re| are) assigned to kill|your new task is to kill) (.+?)(?:\\.|;|,).*");
+    private static final Pattern CURRENT_ASSIGNMENT_PATTERN = Pattern.compile("(?i)you(?:'re| are) (?:still|currently) (?:assigned to kill|hunting) (.+?)(?:\\.|;|,).*");
     private static final Pattern COMPLETE_PATTERN = Pattern.compile("(?i)(?:you've completed|you have completed).+task");
 
     @Inject
@@ -62,6 +67,8 @@ public class SlayerLootPlugin extends Plugin
     private final Map<String, TaskLootRecord> taskRecords = new LinkedHashMap<>();
     private String currentTaskName = DEFAULT_TASK;
     private String currentTaskKey;
+    private int currentTaskRemaining;
+    private int currentTaskOriginal;
 
     private SlayerLootPanel panel;
     private NavigationButton navButton;
@@ -75,7 +82,16 @@ public class SlayerLootPlugin extends Plugin
     @Override
     protected void startUp()
     {
-        BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/panel_icon.png");
+        BufferedImage icon;
+        try
+        {
+            icon = ImageUtil.loadImageResource(getClass(), "/panel_icon.png");
+        }
+        catch (IllegalArgumentException ignored)
+        {
+            icon = null;
+        }
+
         if (icon == null)
         {
             icon = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
@@ -90,18 +106,29 @@ public class SlayerLootPlugin extends Plugin
         clientToolbar.addNavigation(navButton);
 
         loadPersistedState();
-        refreshCurrentTask();
         panel.rebuild();
+        clientThread.invoke(() ->
+        {
+            refreshCurrentTask();
+            panel.rebuild();
+        });
     }
 
     @Override
     protected void shutDown()
     {
         savePersistedState();
-        clientToolbar.removeNavigation(navButton);
+        if (navButton != null)
+        {
+            clientToolbar.removeNavigation(navButton);
+            navButton = null;
+        }
+        panel = null;
         taskRecords.clear();
         currentTaskName = DEFAULT_TASK;
         currentTaskKey = null;
+        currentTaskRemaining = 0;
+        currentTaskOriginal = 0;
     }
 
     @Subscribe
@@ -139,6 +166,17 @@ public class SlayerLootPlugin extends Plugin
             return;
         }
 
+        Matcher currentAssignmentMatcher = CURRENT_ASSIGNMENT_PATTERN.matcher(message);
+        if (currentAssignmentMatcher.matches())
+        {
+            String taskName = currentAssignmentMatcher.group(1).trim();
+            if (!taskName.isEmpty())
+            {
+                switchTask(taskName);
+            }
+            return;
+        }
+
         if (COMPLETE_PATTERN.matcher(message).find())
         {
             currentTaskName = DEFAULT_TASK;
@@ -151,11 +189,12 @@ public class SlayerLootPlugin extends Plugin
     @Subscribe
     public void onServerNpcLoot(ServerNpcLoot event)
     {
+        final List<ItemStack> drops = new ArrayList<>(event.getItems());
         clientThread.invokeLater(() ->
         {
             TaskLootRecord record = getOrCreateCurrentRecord();
             record.incrementKills();
-            for (ItemStack stack : event.getItems())
+            for (ItemStack stack : drops)
             {
                 int itemId = stack.getId();
                 int qty = stack.getQuantity();
@@ -226,9 +265,41 @@ public class SlayerLootPlugin extends Plugin
         panel.rebuild();
     }
 
+    void deleteTask(String taskKey)
+    {
+        if (taskKey == null || !taskRecords.containsKey(taskKey))
+        {
+            return;
+        }
+
+        taskRecords.remove(taskKey);
+        if (taskKey.equals(currentTaskKey))
+        {
+            currentTaskKey = null;
+            currentTaskName = DEFAULT_TASK;
+        }
+        savePersistedState();
+        panel.rebuild();
+    }
+
     String getCurrentTaskKey()
     {
         return currentTaskKey;
+    }
+
+    String getCurrentTaskName()
+    {
+        return currentTaskName;
+    }
+
+    int getCurrentTaskRemaining()
+    {
+        return currentTaskRemaining;
+    }
+
+    AsyncBufferedImage getItemIcon(int itemId, int quantity)
+    {
+        return itemManager.getImage(itemId, quantity, false);
     }
 
     private TaskLootRecord getOrCreateCurrentRecord()
@@ -261,19 +332,91 @@ public class SlayerLootPlugin extends Plugin
 
     private String readTaskNameFromWidget()
     {
-        Widget widget = client.getWidget(WidgetInfo.SLAYER_TASK);
-        if (widget == null)
+        int amount = client.getVarpValue(VarPlayerID.SLAYER_COUNT);
+        currentTaskRemaining = amount;
+        currentTaskOriginal = client.getVarpValue(VarPlayerID.SLAYER_COUNT_ORIGINAL);
+        if (amount <= 0)
         {
             return "";
         }
 
-        String text = Text.removeTags(widget.getText()).trim();
-        if (text.isEmpty())
+        int taskId = client.getVarpValue(VarPlayerID.SLAYER_TARGET);
+        if (taskId <= 0)
         {
             return "";
         }
 
-        return text.replace("Task: ", "").trim();
+        int taskDbRow;
+        if (taskId == 98)
+        {
+            var bossRows = client.getDBRowsByValue(
+                DBTableID.SlayerTaskSublist.ID,
+                DBTableID.SlayerTaskSublist.COL_TASK_SUBTABLE_ID,
+                0,
+                client.getVarbitValue(VarbitID.SLAYER_TARGET_BOSSID)
+            );
+            if (bossRows.isEmpty())
+            {
+                return "";
+            }
+
+            Object[] taskField = client.getDBTableField(bossRows.get(0), DBTableID.SlayerTaskSublist.COL_TASK, 0);
+            if (taskField == null || taskField.length == 0 || !(taskField[0] instanceof Integer))
+            {
+                return "";
+            }
+            taskDbRow = (Integer) taskField[0];
+        }
+        else
+        {
+            var taskRows = client.getDBRowsByValue(DBTableID.SlayerTask.ID, DBTableID.SlayerTask.COL_ID, 0, taskId);
+            if (taskRows.isEmpty())
+            {
+                return "";
+            }
+            taskDbRow = taskRows.get(0);
+        }
+
+        Object[] nameField = client.getDBTableField(taskDbRow, DBTableID.SlayerTask.COL_NAME_UPPERCASE, 0);
+        if (nameField == null || nameField.length == 0 || !(nameField[0] instanceof String))
+        {
+            return "";
+        }
+
+        String taskName = ((String) nameField[0]).trim();
+        if (taskName.isEmpty())
+        {
+            return "";
+        }
+
+        // DB value is uppercase; normalize for panel display.
+        taskName = taskName.toLowerCase();
+        if (taskName.length() == 1)
+        {
+            return taskName.toUpperCase();
+        }
+        return Character.toUpperCase(taskName.charAt(0)) + taskName.substring(1);
+    }
+
+    int getCurrentTaskOriginalAmount()
+    {
+        return currentTaskOriginal;
+    }
+
+    int getCurrentTaskCompletedCount()
+    {
+        int remain = currentTaskRemaining;
+        int original = currentTaskOriginal;
+        if (original <= 0 || remain < 0)
+        {
+            return 0;
+        }
+        return Math.max(0, original - remain);
+    }
+
+    boolean hasActiveSlayerTask()
+    {
+        return currentTaskRemaining > 0;
     }
 
     private void trimTaskHistory()
