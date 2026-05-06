@@ -4,12 +4,15 @@ import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.RenderingHints;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.geom.Path2D;
 import java.awt.image.BufferedImage;
 import java.text.NumberFormat;
@@ -29,8 +32,11 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
+import javax.swing.JMenuItem;
 import javax.swing.JScrollPane;
 import javax.swing.JToggleButton;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
@@ -40,7 +46,7 @@ import net.runelite.client.util.QuantityFormatter;
 
 class SlayerLootPanel extends PluginPanel
 {
-    private static final int ICON_BTN_SIZE = 28;
+    private static final int ICON_BTN_SIZE = 22;
     /** Cached raster icons — Runescape fonts do not draw carets reliably. */
     private static final ImageIcon ICON_CARET_UP = rasterCaretUp(ColorScheme.LIGHT_GRAY_COLOR);
     private static final ImageIcon ICON_CARET_DOWN = rasterCaretDown(ColorScheme.LIGHT_GRAY_COLOR);
@@ -48,10 +54,13 @@ class SlayerLootPanel extends PluginPanel
     private static final ImageIcon ICON_CLOSE = rasterClose(ColorScheme.PROGRESS_ERROR_COLOR);
     private static final ImageIcon ICON_EXCLUDE_OFF = rasterXOutline(ColorScheme.MEDIUM_GRAY_COLOR);
     private static final ImageIcon ICON_EXCLUDE_ON = rasterXFilled(ColorScheme.PROGRESS_ERROR_COLOR);
+    /** Eye is shown when hidden tasks are visible; eye-with-slash is shown when they are filtered out. */
+    private static final ImageIcon ICON_EYE = rasterEye(ColorScheme.LIGHT_GRAY_COLOR);
+    private static final ImageIcon ICON_EYE_OFF = rasterEyeOff(ColorScheme.LIGHT_GRAY_COLOR);
 
     private final SlayerLootPlugin plugin;
     private final JPanel content = new JPanel();
-    private final JCheckBox showHiddenTasks = new JCheckBox("Show hidden tasks");
+    private final JToggleButton showHiddenTasks = new JToggleButton(ICON_EYE_OFF);
     private final Map<String, Boolean> collapsedTasks = new HashMap<>();
 
     /** Toggles collapse/expand for all tracked tasks (shown when toolbar is built). */
@@ -94,13 +103,11 @@ class SlayerLootPanel extends PluginPanel
         JButton b = new JButton(icon);
         b.setToolTipText(tooltip);
         b.setText(null);
-        b.setMargin(new Insets(2, 2, 2, 2));
+        b.setMargin(new Insets(0, 0, 0, 0));
         b.setFocusPainted(false);
-        b.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-        b.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR, 1, true),
-            BorderFactory.createEmptyBorder(4, 4, 4, 4)
-        ));
+        b.setContentAreaFilled(false);
+        b.setBorderPainted(false);
+        b.setOpaque(false);
         Dimension d = new Dimension(ICON_BTN_SIZE, ICON_BTN_SIZE);
         b.setPreferredSize(d);
         b.setMinimumSize(d);
@@ -176,20 +183,46 @@ class SlayerLootPanel extends PluginPanel
         collapseHint.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
         collapseRow.add(collapseHint);
 
-        JPanel toggles = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        toggles.setOpaque(false);
-        toggles.add(showHiddenTasks);
+        showHiddenTasks.setIcon(ICON_EYE_OFF);
+        showHiddenTasks.setSelectedIcon(ICON_EYE);
+        showHiddenTasks.setText(null);
+        showHiddenTasks.setMargin(new Insets(0, 0, 0, 0));
         showHiddenTasks.setOpaque(false);
-        showHiddenTasks.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-        showHiddenTasks.addActionListener(e -> rebuild());
-        toggles.setAlignmentX(Component.LEFT_ALIGNMENT);
+        showHiddenTasks.setContentAreaFilled(false);
+        showHiddenTasks.setBorderPainted(false);
+        showHiddenTasks.setFocusPainted(false);
+        Dimension eyeSize = new Dimension(ICON_BTN_SIZE, ICON_BTN_SIZE);
+        showHiddenTasks.setPreferredSize(eyeSize);
+        showHiddenTasks.setMinimumSize(eyeSize);
+        showHiddenTasks.setMaximumSize(eyeSize);
+        refreshShowHiddenTasksTooltip();
+        showHiddenTasks.addActionListener(e ->
+        {
+            refreshShowHiddenTasksTooltip();
+            rebuild();
+        });
+
+        JPanel togglesRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        togglesRow.setOpaque(false);
+        togglesRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        togglesRow.add(showHiddenTasks);
+        JLabel hiddenHint = new JLabel("Show hidden tasks");
+        hiddenHint.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+        togglesRow.add(hiddenHint);
 
         controls.add(resets);
         controls.add(Box.createRigidArea(new Dimension(0, 2)));
         controls.add(collapseRow);
         controls.add(Box.createRigidArea(new Dimension(0, 2)));
-        controls.add(toggles);
+        controls.add(togglesRow);
         return controls;
+    }
+
+    private void refreshShowHiddenTasksTooltip()
+    {
+        showHiddenTasks.setToolTipText(showHiddenTasks.isSelected()
+            ? "Currently showing hidden tasks — click to hide them"
+            : "Currently hiding hidden tasks — click to show them");
     }
 
     /** If any panel is expanded (\u2260 collapsed), next click collapses everything; otherwise expands everything. */
@@ -309,23 +342,17 @@ class SlayerLootPanel extends PluginPanel
 
         boolean collapsed = collapsedTasks.getOrDefault(record.getTaskKey(), false);
 
-        JPanel titleRow = new JPanel(new BorderLayout(0, 0));
-        titleRow.setOpaque(false);
-        titleRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        JLabel title = new JLabel(record.getTaskName());
+        JLabel title = new JLabel(record.getTaskName() + " \u00D7 " + NUMBER_FORMAT.format(record.getKills()));
         title.setFont(FontManager.getRunescapeBoldFont());
         title.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-        titleRow.add(title, BorderLayout.WEST);
+        title.setToolTipText("Kills: " + NUMBER_FORMAT.format(record.getKills()));
 
-        JPanel iconActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-        iconActions.setOpaque(false);
         JButton collapseBtn = iconOnlyButton(collapsed ? ICON_CARET_DOWN : ICON_CARET_UP, collapsed ? "Expand drops" : "Collapse drops");
         collapseBtn.addActionListener(e ->
         {
             collapsedTasks.put(record.getTaskKey(), !collapsedTasks.getOrDefault(record.getTaskKey(), false));
             rebuild();
         });
-        iconActions.add(collapseBtn);
 
         JButton hideBtn = iconOnlyButton(ICON_HIDE_MINUS, record.isHidden() ? "Show task in list" : "Hide task from list");
         hideBtn.addActionListener(e ->
@@ -342,7 +369,6 @@ class SlayerLootPanel extends PluginPanel
                 plugin.setTaskHidden(record.getTaskKey(), hide);
             }
         });
-        iconActions.add(hideBtn);
 
         JButton deleteBtn = iconOnlyButton(ICON_CLOSE, "Delete task");
         deleteBtn.addActionListener(e ->
@@ -358,12 +384,19 @@ class SlayerLootPanel extends PluginPanel
                 plugin.deleteTask(record.getTaskKey());
             }
         });
+
+        JPanel iconActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+        iconActions.setOpaque(false);
+        iconActions.add(collapseBtn);
+        iconActions.add(hideBtn);
         iconActions.add(deleteBtn);
 
-        JPanel toolbarRow = new JPanel(new BorderLayout(0, 0));
-        toolbarRow.setOpaque(false);
-        toolbarRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        toolbarRow.add(iconActions, BorderLayout.EAST);
+        JPanel headerRow = new JPanel(new BorderLayout(6, 0));
+        headerRow.setOpaque(false);
+        headerRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        headerRow.add(title, BorderLayout.CENTER);
+        headerRow.add(iconActions, BorderLayout.EAST);
+        headerRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, headerRow.getPreferredSize().height));
 
         JPanel taskCard = new JPanel();
         taskCard.setLayout(new BoxLayout(taskCard, BoxLayout.Y_AXIS));
@@ -374,25 +407,27 @@ class SlayerLootPanel extends PluginPanel
         ));
         taskCard.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        taskCard.add(titleRow);
+        taskCard.add(headerRow);
         taskCard.add(Box.createRigidArea(new Dimension(0, 2)));
-        taskCard.add(toolbarRow);
-        taskCard.add(Box.createRigidArea(new Dimension(0, 4)));
 
-        JLabel summary = new JLabel(
-            "Kills: " + NUMBER_FORMAT.format(record.getKills())
-        );
-        summary.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-        summary.setAlignmentX(Component.LEFT_ALIGNMENT);
-        taskCard.add(summary);
+        JPanel valueRow = new JPanel(new BorderLayout(6, 0));
+        valueRow.setOpaque(false);
+        valueRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel valueLeft = new JLabel("Total");
+        valueLeft.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+        JLabel valueRight = new JLabel(QuantityFormatter.quantityToStackSize(record.getGrossProfit()) + " gp");
+        valueRight.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+        valueRight.setHorizontalAlignment(SwingConstants.RIGHT);
+        valueRight.setToolTipText("Gross: " + QuantityFormatter.quantityToStackSize(record.getGrossProfit()) + " gp"
+            + "  |  Actual: " + QuantityFormatter.quantityToStackSize(record.getActualProfit()) + " gp");
+        valueRow.add(valueLeft, BorderLayout.WEST);
+        valueRow.add(valueRight, BorderLayout.EAST);
+        taskCard.add(valueRow);
 
-        JLabel profit = new JLabel(
-            "Profit: Gross " + QuantityFormatter.quantityToStackSize(record.getGrossProfit()) + " gp"
-                + " | Actual: " + QuantityFormatter.quantityToStackSize(record.getActualProfit()) + " gp"
-        );
-        profit.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-        profit.setAlignmentX(Component.LEFT_ALIGNMENT);
-        taskCard.add(profit);
+        JLabel actualRow = new JLabel("Actual: " + QuantityFormatter.quantityToStackSize(record.getActualProfit()) + " gp");
+        actualRow.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+        actualRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        taskCard.add(actualRow);
         taskCard.add(Box.createRigidArea(new Dimension(0, 6)));
 
         if (collapsed)
@@ -417,71 +452,35 @@ class SlayerLootPanel extends PluginPanel
             return true;
         }
 
-            JLabel dropsHeader = new JLabel("Drops (toggle \u2715 to exclude from Actual):");
-        dropsHeader.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
-        dropsHeader.setAlignmentX(Component.LEFT_ALIGNMENT);
-        taskCard.add(dropsHeader);
-        taskCard.add(Box.createRigidArea(new Dimension(0, 4)));
-
+        final int tileSize = 36;
+        final int tileGap = 2;
+        // Cap to 4 columns so the grid never forces the card wider than the side panel.
         int availableWidth = Math.max(getWidth(), content.getWidth());
-        int columns = availableWidth >= 320 ? 3 : (availableWidth >= 220 ? 2 : 1);
-        JPanel itemsPanel = new JPanel(new GridLayout(0, columns, 6, 6));
+        int innerWidth = Math.max(120, availableWidth - 32);
+        int columns = Math.max(2, Math.min(4, (innerWidth + tileGap) / (tileSize + tileGap)));
+
+        JPanel itemsPanel = new JPanel(new GridLayout(0, columns, tileGap, tileGap));
         itemsPanel.setOpaque(false);
         itemsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        int gridPreferredWidth = columns * tileSize + (columns - 1) * tileGap;
+        itemsPanel.setMaximumSize(new Dimension(gridPreferredWidth, Integer.MAX_VALUE));
         for (TaskLootItem item : items)
         {
-            JPanel itemTile = new JPanel(new BorderLayout(4, 0));
-            itemTile.setOpaque(false);
-            itemTile.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(ColorScheme.DARKER_GRAY_HOVER_COLOR),
-                BorderFactory.createEmptyBorder(3, 3, 3, 3)
-            ));
-
-            JLabel iconLabel = new JLabel();
-            iconLabel.setPreferredSize(new Dimension(18, 18));
-            AsyncBufferedImage itemImage = plugin.getItemIcon(item.getItemId(), item.getQuantity());
-            iconLabel.setIcon(new ImageIcon(itemImage));
-            itemImage.onLoaded(() -> SwingUtilities.invokeLater(() ->
-                iconLabel.setIcon(new ImageIcon(itemImage)))
-            );
-            JPanel west = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
-            west.setOpaque(false);
-            west.add(iconLabel);
-            JLabel qtyLabel = new JLabel(NUMBER_FORMAT.format(item.getQuantity()));
-            qtyLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-            qtyLabel.setToolTipText(item.getItemName());
-            west.add(qtyLabel);
-            itemTile.add(west, BorderLayout.WEST);
-
-            String valueText = QuantityFormatter.quantityToStackSize(item.getTotalGeValue()) + " gp";
-            JLabel valueLabel = new JLabel(valueText);
-            valueLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-            valueLabel.setToolTipText(item.getItemName() + " \u2014 Gross for this stack");
-
-            JToggleButton excludeBtn = new JToggleButton(ICON_EXCLUDE_OFF);
-            excludeBtn.setText(null);
-            excludeBtn.setToolTipText("Exclude from Actual profit (toggle)");
-            excludeBtn.setSelectedIcon(ICON_EXCLUDE_ON);
-            excludeBtn.setOpaque(false);
-            excludeBtn.setContentAreaFilled(false);
-            excludeBtn.setBorderPainted(false);
-            excludeBtn.setFocusPainted(false);
-            excludeBtn.setSelected(item.isExcluded());
-            excludeBtn.addActionListener(e -> plugin.setItemIncluded(
-                record.getTaskKey(),
-                item.getItemId(),
-                !excludeBtn.isSelected()
-            ));
-
-            JPanel east = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-            east.setOpaque(false);
-            east.add(valueLabel);
-            east.add(excludeBtn);
-            itemTile.add(east, BorderLayout.EAST);
-
-            itemsPanel.add(itemTile);
+            itemsPanel.add(buildItemTile(record.getTaskKey(), item, tileSize));
         }
-        taskCard.add(itemsPanel);
+
+        JPanel itemsWrapper = new JPanel(new BorderLayout());
+        itemsWrapper.setOpaque(false);
+        itemsWrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        itemsWrapper.add(itemsPanel, BorderLayout.WEST);
+        itemsWrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, itemsPanel.getPreferredSize().height));
+        taskCard.add(itemsWrapper);
+
+        JLabel dropsHint = new JLabel("Right-click an item to exclude / include from Actual");
+        dropsHint.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+        dropsHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        taskCard.add(Box.createRigidArea(new Dimension(0, 4)));
+        taskCard.add(dropsHint);
 
         clampCardHeight(taskCard);
         content.add(taskCard);
@@ -492,6 +491,110 @@ class SlayerLootPanel extends PluginPanel
     private static void clampCardHeight(JPanel taskCard)
     {
         taskCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, taskCard.getPreferredSize().height));
+    }
+
+    private JPanel buildItemTile(String taskKey, TaskLootItem item, int tileSize)
+    {
+        JPanel tile = new JPanel(new BorderLayout());
+        tile.setOpaque(false);
+        Dimension td = new Dimension(tileSize, tileSize);
+        tile.setPreferredSize(td);
+        tile.setMinimumSize(td);
+        tile.setMaximumSize(td);
+
+        JLabel iconLabel = new JLabel();
+        iconLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        iconLabel.setVerticalAlignment(SwingConstants.CENTER);
+        iconLabel.setOpaque(false);
+
+        AsyncBufferedImage img = plugin.getItemIcon(item.getItemId(), item.getQuantity());
+        Runnable applyIcon = () ->
+        {
+            BufferedImage rendered = renderTileImage(img, item.isExcluded(), tileSize);
+            iconLabel.setIcon(new ImageIcon(rendered));
+        };
+        applyIcon.run();
+        img.onLoaded(() -> SwingUtilities.invokeLater(applyIcon));
+
+        String valueText = QuantityFormatter.quantityToStackSize(item.getTotalGeValue()) + " gp";
+        String tip = "<html><b>" + escapeHtml(item.getItemName()) + "</b><br>"
+            + "Quantity: " + NUMBER_FORMAT.format(item.getQuantity()) + "<br>"
+            + "Total: " + valueText
+            + (item.isExcluded() ? "<br><i>Excluded from Actual</i>" : "")
+            + "<br><br><i>Right-click to "
+            + (item.isExcluded() ? "include" : "exclude")
+            + "</i></html>";
+        iconLabel.setToolTipText(tip);
+        iconLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        JPopupMenu menu = new JPopupMenu();
+        JMenuItem toggle = new JMenuItem(item.isExcluded() ? "Include in Actual" : "Exclude from Actual");
+        toggle.addActionListener(e -> plugin.setItemIncluded(taskKey, item.getItemId(), item.isExcluded()));
+        menu.add(toggle);
+
+        iconLabel.addMouseListener(new MouseAdapter()
+        {
+            @Override
+            public void mousePressed(MouseEvent e)
+            {
+                maybeShowMenu(e);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e)
+            {
+                maybeShowMenu(e);
+            }
+
+            private void maybeShowMenu(MouseEvent e)
+            {
+                if (e.isPopupTrigger() || SwingUtilities.isRightMouseButton(e))
+                {
+                    menu.show(iconLabel, e.getX(), e.getY());
+                }
+            }
+        });
+
+        tile.add(iconLabel, BorderLayout.CENTER);
+        return tile;
+    }
+
+    private static BufferedImage renderTileImage(BufferedImage source, boolean excluded, int tileSize)
+    {
+        BufferedImage out = new BufferedImage(tileSize, tileSize, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = out.createGraphics();
+        applyIconQuality(g);
+        if (source != null && source.getWidth() > 0 && source.getHeight() > 0)
+        {
+            int x = (tileSize - source.getWidth()) / 2;
+            int y = (tileSize - source.getHeight()) / 2;
+            if (excluded)
+            {
+                g.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, 0.45f));
+                g.drawImage(source, x, y, null);
+                g.setComposite(java.awt.AlphaComposite.SrcOver);
+                g.setColor(ColorScheme.PROGRESS_ERROR_COLOR);
+                g.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                int pad = 6;
+                g.drawLine(pad, pad, tileSize - pad, tileSize - pad);
+                g.drawLine(tileSize - pad, pad, pad, tileSize - pad);
+            }
+            else
+            {
+                g.drawImage(source, x, y, null);
+            }
+        }
+        g.dispose();
+        return out;
+    }
+
+    private static String escapeHtml(String s)
+    {
+        if (s == null)
+        {
+            return "";
+        }
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private static ImageIcon rasterCaretUp(Color fg)
@@ -590,6 +693,48 @@ class SlayerLootPanel extends PluginPanel
         int pad = 3;
         g.drawLine(pad, pad, s - pad, s - pad);
         g.drawLine(s - pad, pad, pad, s - pad);
+        g.dispose();
+        return new ImageIcon(bi);
+    }
+
+    private static ImageIcon rasterEye(Color fg)
+    {
+        final int s = 14;
+        BufferedImage bi = new BufferedImage(s, s, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = bi.createGraphics();
+        applyIconQuality(g);
+        g.setColor(fg);
+        g.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        Path2D.Float lid = new Path2D.Float();
+        lid.moveTo(1.5f, s / 2f);
+        lid.curveTo(s * 0.3f, 2f, s * 0.7f, 2f, s - 1.5f, s / 2f);
+        lid.curveTo(s * 0.7f, s - 2f, s * 0.3f, s - 2f, 1.5f, s / 2f);
+        lid.closePath();
+        g.draw(lid);
+        float r = 2.2f;
+        g.fill(new java.awt.geom.Ellipse2D.Float(s / 2f - r, s / 2f - r, r * 2, r * 2));
+        g.dispose();
+        return new ImageIcon(bi);
+    }
+
+    private static ImageIcon rasterEyeOff(Color fg)
+    {
+        final int s = 14;
+        BufferedImage bi = new BufferedImage(s, s, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = bi.createGraphics();
+        applyIconQuality(g);
+        g.setColor(fg);
+        g.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        Path2D.Float lid = new Path2D.Float();
+        lid.moveTo(1.5f, s / 2f);
+        lid.curveTo(s * 0.3f, 2f, s * 0.7f, 2f, s - 1.5f, s / 2f);
+        lid.curveTo(s * 0.7f, s - 2f, s * 0.3f, s - 2f, 1.5f, s / 2f);
+        lid.closePath();
+        g.draw(lid);
+        float r = 2.2f;
+        g.fill(new java.awt.geom.Ellipse2D.Float(s / 2f - r, s / 2f - r, r * 2, r * 2));
+        g.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.drawLine(2, 2, s - 2, s - 2);
         g.dispose();
         return new ImageIcon(bi);
     }

@@ -299,7 +299,8 @@ public class SlayerLootPlugin extends Plugin
 
     AsyncBufferedImage getItemIcon(int itemId, int quantity)
     {
-        return itemManager.getImage(itemId, quantity, false);
+        // stackable=true forces the quantity overlay (top-left) to render even when the base item is non-stackable.
+        return itemManager.getImage(itemId, quantity, true);
     }
 
     private TaskLootRecord getOrCreateCurrentRecord()
