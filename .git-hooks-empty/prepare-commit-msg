@@ -1,0 +1,16 @@
+#!/bin/sh
+# Remove Co-authored-by trailers injected by tooling; this repo maintains single-author commits.
+MSG_FILE="$1"
+[ -n "$MSG_FILE" ] && [ -f "$MSG_FILE" ] || exit 0
+tmp="$MSG_FILE.tmpstrip.$$"
+cleanup() {
+	rm -f "$tmp" 2>/dev/null
+}
+trap cleanup INT TERM HUP EXIT
+if grep -qEi '^[[:space:]]*Co-authored-by:' "$MSG_FILE" 2>/dev/null; then
+	grep -viE '^[[:space:]]*Co-authored-by:' "$MSG_FILE" > "$tmp" 2>/dev/null && mv -f "$tmp" "$MSG_FILE"
+fi
+trap - EXIT
+trap - INT TERM HUP
+cleanup
+exit 0

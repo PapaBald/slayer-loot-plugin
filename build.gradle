@@ -43,6 +43,17 @@ tasks.register('run', JavaExec) {
     args "--developer-mode", "--debug"
 }
 
+/**
+ * Run once after clone so Git uses .git-hooks-empty (Co-authored-by trailers are stripped).
+ * Equivalent: git config core.hooksPath .git-hooks-empty
+ */
+tasks.register('installGitHooksPath', Exec) {
+    group = 'build setup'
+    description = 'Configure git hooksPath for this repo (prevents tooling from adding Co-authored-by).'
+    workingDir = layout.projectDirectory
+    commandLine 'git', 'config', 'core.hooksPath', '.git-hooks-empty'
+}
+
 tasks.register('shadowJar', Jar) {
     dependsOn configurations.testRuntimeClasspath
     manifest {
