@@ -36,6 +36,8 @@ import javax.swing.JPopupMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JScrollPane;
 import javax.swing.JToggleButton;
+import javax.swing.JViewport;
+import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import net.runelite.client.ui.ColorScheme;
@@ -59,8 +61,43 @@ class SlayerLootPanel extends PluginPanel
     private static final ImageIcon ICON_EYE_OFF = rasterEyeOff(ColorScheme.LIGHT_GRAY_COLOR);
 
     private final SlayerLootPlugin plugin;
-    private final JPanel content = new JPanel();
+    private final JPanel content = new ContentPanel();
+    private JScrollPane scrollPane;
     private final JToggleButton showHiddenTasks = new JToggleButton(ICON_EYE_OFF);
+
+    /** Vertical-only scrolling content that forces children to fit the viewport width. */
+    private static final class ContentPanel extends JPanel implements Scrollable
+    {
+        @Override
+        public Dimension getPreferredScrollableViewportSize()
+        {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(java.awt.Rectangle visibleRect, int orientation, int direction)
+        {
+            return 16;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(java.awt.Rectangle visibleRect, int orientation, int direction)
+        {
+            return Math.max(16, visibleRect.height - 16);
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth()
+        {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight()
+        {
+            return false;
+        }
+    }
     private final Map<String, Boolean> collapsedTasks = new HashMap<>();
 
     /** Toggles collapse/expand for all tracked tasks (shown when toolbar is built). */
@@ -80,9 +117,10 @@ class SlayerLootPanel extends PluginPanel
         content.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
         JPanel controls = buildControlsPanel();
-        JScrollPane scrollPane = new JScrollPane(content);
+        scrollPane = new JScrollPane(content);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
         scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         add(controls, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
@@ -391,12 +429,14 @@ class SlayerLootPanel extends PluginPanel
         iconActions.add(hideBtn);
         iconActions.add(deleteBtn);
 
-        JPanel headerRow = new JPanel(new BorderLayout(6, 0));
+        JPanel headerRow = new JPanel();
+        headerRow.setLayout(new BoxLayout(headerRow, BoxLayout.X_AXIS));
         headerRow.setOpaque(false);
         headerRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        headerRow.add(title, BorderLayout.CENTER);
-        headerRow.add(iconActions, BorderLayout.EAST);
-        headerRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, headerRow.getPreferredSize().height));
+        headerRow.add(title);
+        headerRow.add(Box.createHorizontalGlue());
+        headerRow.add(iconActions);
+        headerRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, ICON_BTN_SIZE + 2));
 
         JPanel taskCard = new JPanel();
         taskCard.setLayout(new BoxLayout(taskCard, BoxLayout.Y_AXIS));
@@ -410,23 +450,35 @@ class SlayerLootPanel extends PluginPanel
         taskCard.add(headerRow);
         taskCard.add(Box.createRigidArea(new Dimension(0, 2)));
 
-        JPanel valueRow = new JPanel(new BorderLayout(6, 0));
-        valueRow.setOpaque(false);
-        valueRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         JLabel valueLeft = new JLabel("Total");
         valueLeft.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
         JLabel valueRight = new JLabel(QuantityFormatter.quantityToStackSize(record.getGrossProfit()) + " gp");
         valueRight.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-        valueRight.setHorizontalAlignment(SwingConstants.RIGHT);
         valueRight.setToolTipText("Gross: " + QuantityFormatter.quantityToStackSize(record.getGrossProfit()) + " gp"
             + "  |  Actual: " + QuantityFormatter.quantityToStackSize(record.getActualProfit()) + " gp");
-        valueRow.add(valueLeft, BorderLayout.WEST);
-        valueRow.add(valueRight, BorderLayout.EAST);
+
+        JPanel valueRow = new JPanel();
+        valueRow.setLayout(new BoxLayout(valueRow, BoxLayout.X_AXIS));
+        valueRow.setOpaque(false);
+        valueRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        valueRow.add(valueLeft);
+        valueRow.add(Box.createHorizontalGlue());
+        valueRow.add(valueRight);
+        valueRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, valueRight.getPreferredSize().height));
         taskCard.add(valueRow);
 
-        JLabel actualRow = new JLabel("Actual: " + QuantityFormatter.quantityToStackSize(record.getActualProfit()) + " gp");
-        actualRow.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+        JLabel actualLeft = new JLabel("Actual");
+        actualLeft.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+        JLabel actualRight = new JLabel(QuantityFormatter.quantityToStackSize(record.getActualProfit()) + " gp");
+        actualRight.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+        JPanel actualRow = new JPanel();
+        actualRow.setLayout(new BoxLayout(actualRow, BoxLayout.X_AXIS));
+        actualRow.setOpaque(false);
         actualRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        actualRow.add(actualLeft);
+        actualRow.add(Box.createHorizontalGlue());
+        actualRow.add(actualRight);
+        actualRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, actualRight.getPreferredSize().height));
         taskCard.add(actualRow);
         taskCard.add(Box.createRigidArea(new Dimension(0, 6)));
 
@@ -454,26 +506,31 @@ class SlayerLootPanel extends PluginPanel
 
         final int tileSize = 36;
         final int tileGap = 2;
-        // Cap to 4 columns so the grid never forces the card wider than the side panel.
-        int availableWidth = Math.max(getWidth(), content.getWidth());
-        int innerWidth = Math.max(120, availableWidth - 32);
-        int columns = Math.max(2, Math.min(4, (innerWidth + tileGap) / (tileSize + tileGap)));
+        // Use the live viewport width so the grid never exceeds the visible side panel area.
+        JViewport vp = scrollPane != null ? scrollPane.getViewport() : null;
+        int viewportWidth = vp != null && vp.getWidth() > 0 ? vp.getWidth() : Math.max(160, getWidth());
+        int cardInner = Math.max(120, viewportWidth - 32);
+        int columns = Math.max(2, Math.min(4, (cardInner + tileGap) / (tileSize + tileGap)));
+        int gridWidth = columns * tileSize + (columns - 1) * tileGap;
 
         JPanel itemsPanel = new JPanel(new GridLayout(0, columns, tileGap, tileGap));
         itemsPanel.setOpaque(false);
         itemsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        int gridPreferredWidth = columns * tileSize + (columns - 1) * tileGap;
-        itemsPanel.setMaximumSize(new Dimension(gridPreferredWidth, Integer.MAX_VALUE));
         for (TaskLootItem item : items)
         {
             itemsPanel.add(buildItemTile(record.getTaskKey(), item, tileSize));
         }
+        Dimension gridPref = new Dimension(gridWidth, itemsPanel.getPreferredSize().height);
+        itemsPanel.setPreferredSize(gridPref);
+        itemsPanel.setMaximumSize(gridPref);
 
-        JPanel itemsWrapper = new JPanel(new BorderLayout());
+        JPanel itemsWrapper = new JPanel();
+        itemsWrapper.setLayout(new BoxLayout(itemsWrapper, BoxLayout.X_AXIS));
         itemsWrapper.setOpaque(false);
         itemsWrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
-        itemsWrapper.add(itemsPanel, BorderLayout.WEST);
-        itemsWrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, itemsPanel.getPreferredSize().height));
+        itemsWrapper.add(itemsPanel);
+        itemsWrapper.add(Box.createHorizontalGlue());
+        itemsWrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, gridPref.height));
         taskCard.add(itemsWrapper);
 
         JLabel dropsHint = new JLabel("Right-click an item to exclude / include from Actual");
