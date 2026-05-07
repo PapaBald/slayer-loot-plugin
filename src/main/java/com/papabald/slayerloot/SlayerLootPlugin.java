@@ -86,20 +86,20 @@ public class SlayerLootPlugin extends Plugin
     @Override
     protected void startUp()
     {
+        // Package-relative path -> resolves to
+        // src/main/resources/com/papabald/slayerloot/panel_icon.png on disk.
+        // Matches the convention used by every official RuneLite plugin.
         BufferedImage icon;
         try
         {
-            icon = ImageUtil.loadImageResource(getClass(), "/panel_icon.png");
+            icon = ImageUtil.loadImageResource(SlayerLootPlugin.class, "panel_icon.png");
         }
-        catch (IllegalArgumentException ignored)
+        catch (IllegalArgumentException ex)
         {
-            icon = null;
-        }
-
-        if (icon == null)
-        {
+            log.warn("Failed to load Slayer Loot panel icon, falling back to a transparent stub", ex);
             icon = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
         }
+
         panel = new SlayerLootPanel(this);
         navButton = NavigationButton.builder()
             .tooltip("Slayer Loot")
