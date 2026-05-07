@@ -28,15 +28,11 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
-import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JPopupMenu;
-import javax.swing.JMenuItem;
 import javax.swing.JScrollPane;
 import javax.swing.JToggleButton;
-import javax.swing.JViewport;
 import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -160,9 +156,11 @@ class SlayerLootPanel extends PluginPanel
         controls.setBackground(ColorScheme.DARK_GRAY_COLOR);
         controls.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
 
-        JPanel resets = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        // Two-column equal-width grid so each reset button takes 50% of the toolbar width.
+        JPanel resets = new JPanel(new GridLayout(1, 2, 6, 0));
         resets.setOpaque(false);
         resets.setAlignmentX(Component.LEFT_ALIGNMENT);
+        resets.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
 
         JButton resetCurrent = new JButton("Reset Current");
         resetCurrent.addActionListener(e ->
@@ -353,6 +351,7 @@ class SlayerLootPanel extends PluginPanel
         JLabel name = new JLabel("Current task: " + taskName);
         name.setFont(FontManager.getRunescapeBoldFont());
         name.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+        name.setAlignmentX(Component.LEFT_ALIGNMENT);
         activeTask.add(name);
 
         if (plugin.hasActiveSlayerTask())
@@ -363,8 +362,12 @@ class SlayerLootPanel extends PluginPanel
             JLabel counts = new JLabel("Progress: " + NUMBER_FORMAT.format(completed) + "/" + NUMBER_FORMAT.format(original)
                 + " (" + NUMBER_FORMAT.format(remaining) + " left)");
             counts.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+            counts.setAlignmentX(Component.LEFT_ALIGNMENT);
             activeTask.add(counts);
         }
+
+        // Stretch full panel width so the box visually aligns with task cards below.
+        activeTask.setMaximumSize(new Dimension(Integer.MAX_VALUE, activeTask.getPreferredSize().height));
 
         content.add(activeTask);
         content.add(Box.createRigidArea(new Dimension(0, 8)));
@@ -504,36 +507,37 @@ class SlayerLootPanel extends PluginPanel
             return true;
         }
 
-        final int tileSize = 36;
-        final int tileGap = 2;
-        // Use the live viewport width so the grid never exceeds the visible side panel area.
-        JViewport vp = scrollPane != null ? scrollPane.getViewport() : null;
-        int viewportWidth = vp != null && vp.getWidth() > 0 ? vp.getWidth() : Math.max(160, getWidth());
-        int cardInner = Math.max(120, viewportWidth - 32);
-        int columns = Math.max(2, Math.min(4, (cardInner + tileGap) / (tileSize + tileGap)));
-        int gridWidth = columns * tileSize + (columns - 1) * tileGap;
+        // Fixed 5-column grid mirrors the official Loot Tracker
+        // (LootTrackerBox#ITEMS_PER_ROW). GridLayout stretches to whatever
+        // width the side panel actually gives us, so we don't need any
+        // viewport-width math.
+        final int columns = 5;
+        final int rowSize = ((items.size() % columns) == 0 ? 0 : 1) + items.size() / columns;
 
-        JPanel itemsPanel = new JPanel(new GridLayout(0, columns, tileGap, tileGap));
-        itemsPanel.setOpaque(false);
+        JPanel itemsPanel = new JPanel(new GridLayout(rowSize, columns, 1, 1));
+        itemsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
         itemsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        for (TaskLootItem item : items)
+
+        for (int i = 0; i < rowSize * columns; i++)
         {
-            itemsPanel.add(buildItemTile(record.getTaskKey(), item, tileSize));
+            if (i < items.size())
+            {
+                itemsPanel.add(buildItemTile(record.getTaskKey(), items.get(i)));
+            }
+            else
+            {
+                // Pad short final row with blanks so existing cells aren't stretched horizontally.
+                JPanel filler = new JPanel();
+                filler.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+                itemsPanel.add(filler);
+            }
         }
-        Dimension gridPref = new Dimension(gridWidth, itemsPanel.getPreferredSize().height);
-        itemsPanel.setPreferredSize(gridPref);
-        itemsPanel.setMaximumSize(gridPref);
 
-        JPanel itemsWrapper = new JPanel();
-        itemsWrapper.setLayout(new BoxLayout(itemsWrapper, BoxLayout.X_AXIS));
-        itemsWrapper.setOpaque(false);
-        itemsWrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
-        itemsWrapper.add(itemsPanel);
-        itemsWrapper.add(Box.createHorizontalGlue());
-        itemsWrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, gridPref.height));
-        taskCard.add(itemsWrapper);
+        // Cap height so BoxLayout doesn't grow the grid vertically beyond what it needs.
+        itemsPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, itemsPanel.getPreferredSize().height));
+        taskCard.add(itemsPanel);
 
-        JLabel dropsHint = new JLabel("Right-click an item to exclude / include from Actual");
+        JLabel dropsHint = new JLabel("Click an item to exclude in actual");
         dropsHint.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
         dropsHint.setAlignmentX(Component.LEFT_ALIGNMENT);
         taskCard.add(Box.createRigidArea(new Dimension(0, 4)));
@@ -550,14 +554,12 @@ class SlayerLootPanel extends PluginPanel
         taskCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, taskCard.getPreferredSize().height));
     }
 
-    private JPanel buildItemTile(String taskKey, TaskLootItem item, int tileSize)
+    private JPanel buildItemTile(String taskKey, TaskLootItem item)
     {
-        JPanel tile = new JPanel(new BorderLayout());
-        tile.setOpaque(false);
-        Dimension td = new Dimension(tileSize, tileSize);
-        tile.setPreferredSize(td);
-        tile.setMinimumSize(td);
-        tile.setMaximumSize(td);
+        // Slot mirrors Loot Tracker's slotContainer: a small darker-gray cell
+        // that lets GridLayout dictate the cell width so 5 tiles always fit.
+        JPanel tile = new JPanel();
+        tile.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
         JLabel iconLabel = new JLabel();
         iconLabel.setHorizontalAlignment(SwingConstants.CENTER);
@@ -567,7 +569,7 @@ class SlayerLootPanel extends PluginPanel
         AsyncBufferedImage img = plugin.getItemIcon(item.getItemId(), item.getQuantity());
         Runnable applyIcon = () ->
         {
-            BufferedImage rendered = renderTileImage(img, item.isExcluded(), tileSize);
+            BufferedImage rendered = renderExcluded(img, item.isExcluded());
             iconLabel.setIcon(new ImageIcon(rendered));
         };
         applyIcon.run();
@@ -578,68 +580,60 @@ class SlayerLootPanel extends PluginPanel
             + "Quantity: " + NUMBER_FORMAT.format(item.getQuantity()) + "<br>"
             + "Total: " + valueText
             + (item.isExcluded() ? "<br><i>Excluded from Actual</i>" : "")
-            + "<br><br><i>Right-click to "
-            + (item.isExcluded() ? "include" : "exclude")
+            + "<br><br><i>Click to "
+            + (item.isExcluded() ? "include in Actual" : "exclude from Actual")
             + "</i></html>";
         iconLabel.setToolTipText(tip);
         iconLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
-        JPopupMenu menu = new JPopupMenu();
-        JMenuItem toggle = new JMenuItem(item.isExcluded() ? "Include in Actual" : "Exclude from Actual");
-        toggle.addActionListener(e -> plugin.setItemIncluded(taskKey, item.getItemId(), item.isExcluded()));
-        menu.add(toggle);
-
         iconLabel.addMouseListener(new MouseAdapter()
         {
             @Override
-            public void mousePressed(MouseEvent e)
+            public void mouseClicked(MouseEvent e)
             {
-                maybeShowMenu(e);
-            }
-
-            @Override
-            public void mouseReleased(MouseEvent e)
-            {
-                maybeShowMenu(e);
-            }
-
-            private void maybeShowMenu(MouseEvent e)
-            {
-                if (e.isPopupTrigger() || SwingUtilities.isRightMouseButton(e))
+                // Left-click toggles inclusion. Pass the inverse of the current
+                // excluded state so plugin.setItemIncluded flips it.
+                if (SwingUtilities.isLeftMouseButton(e))
                 {
-                    menu.show(iconLabel, e.getX(), e.getY());
+                    plugin.setItemIncluded(taskKey, item.getItemId(), item.isExcluded());
                 }
             }
         });
 
-        tile.add(iconLabel, BorderLayout.CENTER);
+        tile.add(iconLabel);
         return tile;
     }
 
-    private static BufferedImage renderTileImage(BufferedImage source, boolean excluded, int tileSize)
+    /**
+     * Renders the item icon at its native size and overlays a red X when the
+     * item is excluded from the Actual profit total.
+     */
+    private static BufferedImage renderExcluded(BufferedImage source, boolean excluded)
     {
-        BufferedImage out = new BufferedImage(tileSize, tileSize, BufferedImage.TYPE_INT_ARGB);
+        if (source == null || source.getWidth() <= 0 || source.getHeight() <= 0)
+        {
+            return new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+        }
+
+        int w = source.getWidth();
+        int h = source.getHeight();
+        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = out.createGraphics();
         applyIconQuality(g);
-        if (source != null && source.getWidth() > 0 && source.getHeight() > 0)
+        if (excluded)
         {
-            int x = (tileSize - source.getWidth()) / 2;
-            int y = (tileSize - source.getHeight()) / 2;
-            if (excluded)
-            {
-                g.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, 0.45f));
-                g.drawImage(source, x, y, null);
-                g.setComposite(java.awt.AlphaComposite.SrcOver);
-                g.setColor(ColorScheme.PROGRESS_ERROR_COLOR);
-                g.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                int pad = 6;
-                g.drawLine(pad, pad, tileSize - pad, tileSize - pad);
-                g.drawLine(tileSize - pad, pad, pad, tileSize - pad);
-            }
-            else
-            {
-                g.drawImage(source, x, y, null);
-            }
+            g.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, 0.45f));
+            g.drawImage(source, 0, 0, null);
+            g.setComposite(java.awt.AlphaComposite.SrcOver);
+            g.setColor(ColorScheme.PROGRESS_ERROR_COLOR);
+            g.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            int pad = Math.max(3, Math.min(w, h) / 6);
+            g.drawLine(pad, pad, w - pad, h - pad);
+            g.drawLine(w - pad, pad, pad, h - pad);
+        }
+        else
+        {
+            g.drawImage(source, 0, 0, null);
         }
         g.dispose();
         return out;

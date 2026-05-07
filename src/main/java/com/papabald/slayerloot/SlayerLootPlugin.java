@@ -13,12 +13,15 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.inject.Inject;
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.ItemComposition;
+import net.runelite.api.NPCComposition;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.StatChanged;
+import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.DBTableID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
@@ -36,6 +39,7 @@ import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.Text;
 import net.runelite.client.game.ItemStack;
 
+@Slf4j
 @PluginDescriptor(
     name = "Slayer Loot",
     description = "Track loot, kills, and actual profit per Slayer task",
@@ -146,6 +150,27 @@ public class SlayerLootPlugin extends Plugin
     }
 
     @Subscribe
+    public void onVarbitChanged(VarbitChanged event)
+    {
+        // The Slayer task counters are stored in player varps, so we only
+        // refresh when one of those specifically changes. This is what makes
+        // the panel update on kills that produce no loot/XP events (e.g. a
+        // plain Rat dropping nothing visible) — the server still ticks
+        // SLAYER_COUNT, and we listen for that here.
+        int varp = event.getVarpId();
+        if (varp == VarPlayerID.SLAYER_COUNT
+            || varp == VarPlayerID.SLAYER_COUNT_ORIGINAL
+            || varp == VarPlayerID.SLAYER_TARGET)
+        {
+            refreshCurrentTask();
+            if (panel != null)
+            {
+                panel.rebuild();
+            }
+        }
+    }
+
+    @Subscribe
     public void onChatMessage(ChatMessage event)
     {
         ChatMessageType type = event.getType();
@@ -190,8 +215,33 @@ public class SlayerLootPlugin extends Plugin
     public void onServerNpcLoot(ServerNpcLoot event)
     {
         final List<ItemStack> drops = new ArrayList<>(event.getItems());
+        final NPCComposition composition = event.getComposition();
+        // Some NPC names contain colour tags; strip them so the matcher sees plain text.
+        final String npcName = composition == null ? null : Text.removeTags(composition.getName());
+
         clientThread.invokeLater(() ->
         {
+            // Refresh the cached Slayer task state BEFORE gating. The
+            // SLAYER_COUNT varbit can update either side of this loot event
+            // (e.g. on the final kill of a task it ticks 1 -> 0), and a
+            // stale cache caused legitimate task kills to be dropped on the
+            // floor.
+            refreshCurrentTask();
+
+            // Match purely on task name. SlayerTaskTargets.matches() already
+            // returns false for the DEFAULT_TASK placeholder, so this also
+            // covers the "no active task" case without us depending on the
+            // remaining-count varbit being fresh at the moment of the kill.
+            boolean matched = SlayerTaskTargets.matches(currentTaskName, npcName);
+            if (log.isDebugEnabled())
+            {
+                log.debug("ServerNpcLoot npc='{}' task='{}' matched={} drops={}", npcName, currentTaskName, matched, drops.size());
+            }
+            if (!matched)
+            {
+                return;
+            }
+
             TaskLootRecord record = getOrCreateCurrentRecord();
             record.incrementKills();
             for (ItemStack stack : drops)
