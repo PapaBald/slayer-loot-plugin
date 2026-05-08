@@ -7,3 +7,6 @@ build
 nbactions.xml
 nb-configuration.xml
 nbproject/
+
+# Optional copy of panel art at repo root (bundled copy lives under src/main/resources/...).
+/panel_icon.png

@@ -33,6 +33,11 @@ When a `ServerNpcLoot` event fires, the plugin compares the killed NPC's name ag
 
 [Open an issue on GitHub.](https://github.com/PapaBald/slayer-loot-plugin/issues)
 
+## Icons
+
+- **`icon.png`** (repo root, ~48×72) — Plugin Hub listing image (not loaded from the JAR).
+- **`src/main/resources/com/papabald/slayerloot/panel_icon.png`** (~24×24) — Side-panel tab icon bundled with the plugin. `SlayerLootPlugin` loads this via `ImageUtil.loadImageResource(SlayerLootPlugin.class, "panel_icon.png")`. A duplicate `panel_icon.png` at the repo root is optional for editing and is ignored by Git (`.gitignore`).
+
 ## Building from source
 
 This is a standard Plugin Hub project.
