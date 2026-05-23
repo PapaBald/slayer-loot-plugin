@@ -67,7 +67,8 @@ public class SlayerLootPlugin extends Plugin
     @Inject
     private SlayerLootConfig config;
 
-    private final Gson gson = new Gson();
+    @Inject
+    private Gson gson;
     private final Map<String, TaskLootRecord> taskRecords = new LinkedHashMap<>();
     private String currentTaskName = DEFAULT_TASK;
     private String currentTaskKey;
