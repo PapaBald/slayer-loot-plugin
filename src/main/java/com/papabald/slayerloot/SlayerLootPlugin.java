@@ -160,7 +160,6 @@ public class SlayerLootPlugin extends Plugin
 
         if (panelDirty)
         {
-            panelDirty = false;
             pushPanelState();
         }
     }
@@ -276,68 +275,83 @@ public class SlayerLootPlugin extends Plugin
 
     void setItemIncluded(String taskKey, int itemId, boolean included)
     {
-        TaskLootRecord record = taskRecords.get(taskKey);
-        if (record == null)
+        clientThread.invoke(() ->
         {
-            return;
-        }
+            TaskLootRecord record = taskRecords.get(taskKey);
+            if (record == null)
+            {
+                return;
+            }
 
-        record.setItemExcluded(itemId, !included);
-        savePersistedState();
-        pushPanelState();
+            record.setItemExcluded(itemId, !included);
+            savePersistedState();
+            pushPanelState();
+        });
     }
 
     void setTaskHidden(String taskKey, boolean hidden)
     {
-        TaskLootRecord record = taskRecords.get(taskKey);
-        if (record == null)
+        clientThread.invoke(() ->
         {
-            return;
-        }
+            TaskLootRecord record = taskRecords.get(taskKey);
+            if (record == null)
+            {
+                return;
+            }
 
-        record.setHidden(hidden);
-        savePersistedState();
-        pushPanelState();
+            record.setHidden(hidden);
+            savePersistedState();
+            pushPanelState();
+        });
     }
 
     void resetCurrentTask()
     {
-        if (currentTaskKey == null)
+        clientThread.invoke(() ->
         {
-            return;
-        }
+            if (currentTaskKey == null)
+            {
+                return;
+            }
 
-        taskRecords.remove(currentTaskKey);
-        currentTaskKey = null;
-        currentTaskName = DEFAULT_TASK;
-        savePersistedState();
-        pushPanelState();
+            taskRecords.remove(currentTaskKey);
+            currentTaskKey = null;
+            currentTaskName = DEFAULT_TASK;
+            savePersistedState();
+            pushPanelState();
+        });
     }
 
     void resetAllTasks()
     {
-        taskRecords.clear();
-        currentTaskKey = null;
-        currentTaskName = DEFAULT_TASK;
-        savePersistedState();
-        pushPanelState();
+        clientThread.invoke(() ->
+        {
+            taskRecords.clear();
+            currentTaskKey = null;
+            currentTaskName = DEFAULT_TASK;
+            savePersistedState();
+            pushPanelState();
+        });
     }
 
     void deleteTask(String taskKey)
     {
-        if (taskKey == null || !taskRecords.containsKey(taskKey))
+        clientThread.invoke(() ->
         {
-            return;
-        }
+            if (taskKey == null || !taskRecords.containsKey(taskKey))
+            {
+                return;
+            }
 
-        taskRecords.remove(taskKey);
-        if (taskKey.equals(currentTaskKey))
-        {
-            currentTaskKey = null;
-            currentTaskName = DEFAULT_TASK;
-        }
-        savePersistedState();
-        pushPanelState();
+            taskRecords.remove(taskKey);
+            if (taskKey.equals(currentTaskKey))
+            {
+                currentTaskKey = null;
+                currentTaskName = DEFAULT_TASK;
+            }
+            savePersistedState();
+            pushPanelState();
+        });
     }
 
     String getCurrentTaskKey()
@@ -477,6 +491,7 @@ public class SlayerLootPlugin extends Plugin
     /** Must be called on the client thread. */
     private void pushPanelState()
     {
+        panelDirty = false;
         if (panel == null)
         {
             return;
