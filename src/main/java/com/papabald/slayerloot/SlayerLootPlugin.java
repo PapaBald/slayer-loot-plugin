@@ -21,6 +21,7 @@ import net.runelite.api.ItemComposition;
 import net.runelite.api.NPCComposition;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.DBTableID;
 import net.runelite.api.gameval.VarPlayerID;
@@ -77,6 +78,8 @@ public class SlayerLootPlugin extends Plugin
     private int cachedTaskId = -1;
     private int cachedBossId = -1;
     private String cachedTaskName = "";
+    private boolean saveQueued;
+    private boolean panelDirty;
 
     private SlayerLootPanel panel;
     private NavigationButton navButton;
@@ -149,6 +152,25 @@ public class SlayerLootPlugin extends Plugin
     }
 
     @Subscribe
+    public void onGameTick(GameTick tick)
+    {
+        if (saveQueued)
+        {
+            saveQueued = false;
+            savePersistedState();
+        }
+
+        if (panelDirty)
+        {
+            panelDirty = false;
+            if (panel != null)
+            {
+                panel.rebuild();
+            }
+        }
+    }
+
+    @Subscribe
     public void onVarbitChanged(VarbitChanged event)
     {
         // The Slayer task counters are stored in player varps, so we only
@@ -162,10 +184,7 @@ public class SlayerLootPlugin extends Plugin
             || varp == VarPlayerID.SLAYER_TARGET)
         {
             refreshCurrentTask();
-            if (panel != null)
-            {
-                panel.rebuild();
-            }
+            panelDirty = true;
         }
     }
 
@@ -255,8 +274,8 @@ public class SlayerLootPlugin extends Plugin
                 record.addLoot(itemId, itemName, qty, geValue);
             }
             trimTaskHistory();
-            savePersistedState();
-            panel.rebuild();
+            saveQueued = true;
+            panelDirty = true;
         });
     }
 
@@ -505,7 +524,7 @@ public class SlayerLootPlugin extends Plugin
     {
         currentTaskName = taskName;
         currentTaskKey = currentTaskName + "-" + Instant.now();
-        savePersistedState();
+        saveQueued = true;
     }
 
     private void savePersistedState()
