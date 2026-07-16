@@ -16,6 +16,7 @@ import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ChatMessageType;
+import net.runelite.api.GameState;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.NPCComposition;
 import net.runelite.api.events.ChatMessage;
@@ -73,6 +74,9 @@ public class SlayerLootPlugin extends Plugin
     private String currentTaskKey;
     private int currentTaskRemaining;
     private int currentTaskOriginal;
+    private int cachedTaskId = -1;
+    private int cachedBossId = -1;
+    private String cachedTaskName = "";
 
     private SlayerLootPanel panel;
     private NavigationButton navButton;
@@ -138,7 +142,10 @@ public class SlayerLootPlugin extends Plugin
     @Subscribe
     public void onGameStateChanged(GameStateChanged event)
     {
-        refreshCurrentTask();
+        if (event.getGameState() == GameState.LOGGED_IN)
+        {
+            refreshCurrentTask();
+        }
     }
 
     @Subscribe
@@ -347,7 +354,6 @@ public class SlayerLootPlugin extends Plugin
 
     private TaskLootRecord getOrCreateCurrentRecord()
     {
-        refreshCurrentTask();
         if (currentTaskKey == null)
         {
             currentTaskName = DEFAULT_TASK;
@@ -389,6 +395,29 @@ public class SlayerLootPlugin extends Plugin
             return "";
         }
 
+        int bossId = taskId == 98 ? client.getVarbitValue(VarbitID.SLAYER_TARGET_BOSSID) : -1;
+
+        // Hot path: task identity is unchanged, so the resolved name is too.
+        if (taskId == cachedTaskId && bossId == cachedBossId)
+        {
+            return cachedTaskName;
+        }
+
+        String resolved = resolveTaskNameFromDb(taskId, bossId);
+        if (resolved.isEmpty())
+        {
+            // Don't cache failures — the DB may just not be loaded yet (e.g. mid-login).
+            return "";
+        }
+
+        cachedTaskId = taskId;
+        cachedBossId = bossId;
+        cachedTaskName = resolved;
+        return resolved;
+    }
+
+    private String resolveTaskNameFromDb(int taskId, int bossId)
+    {
         int taskDbRow;
         if (taskId == 98)
         {
@@ -396,7 +425,7 @@ public class SlayerLootPlugin extends Plugin
                 DBTableID.SlayerTaskSublist.ID,
                 DBTableID.SlayerTaskSublist.COL_TASK_SUBTABLE_ID,
                 0,
-                client.getVarbitValue(VarbitID.SLAYER_TARGET_BOSSID)
+                bossId
             );
             if (bossRows.isEmpty())
             {
