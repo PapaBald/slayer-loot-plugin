@@ -6,7 +6,6 @@ import com.google.inject.Provides;
 import java.awt.image.BufferedImage;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -117,11 +116,10 @@ public class SlayerLootPlugin extends Plugin
         clientToolbar.addNavigation(navButton);
 
         loadPersistedState();
-        panel.rebuild();
         clientThread.invoke(() ->
         {
             refreshCurrentTask();
-            panel.rebuild();
+            pushPanelState();
         });
     }
 
@@ -163,10 +161,7 @@ public class SlayerLootPlugin extends Plugin
         if (panelDirty)
         {
             panelDirty = false;
-            if (panel != null)
-            {
-                panel.rebuild();
-            }
+            pushPanelState();
         }
     }
 
@@ -225,7 +220,7 @@ public class SlayerLootPlugin extends Plugin
             currentTaskName = DEFAULT_TASK;
             currentTaskKey = null;
             savePersistedState();
-            panel.rebuild();
+            pushPanelState();
         }
     }
 
@@ -279,11 +274,6 @@ public class SlayerLootPlugin extends Plugin
         });
     }
 
-    Collection<TaskLootRecord> getTaskRecords()
-    {
-        return taskRecords.values();
-    }
-
     void setItemIncluded(String taskKey, int itemId, boolean included)
     {
         TaskLootRecord record = taskRecords.get(taskKey);
@@ -294,7 +284,7 @@ public class SlayerLootPlugin extends Plugin
 
         record.setItemExcluded(itemId, !included);
         savePersistedState();
-        panel.rebuild();
+        pushPanelState();
     }
 
     void setTaskHidden(String taskKey, boolean hidden)
@@ -307,7 +297,7 @@ public class SlayerLootPlugin extends Plugin
 
         record.setHidden(hidden);
         savePersistedState();
-        panel.rebuild();
+        pushPanelState();
     }
 
     void resetCurrentTask()
@@ -321,7 +311,7 @@ public class SlayerLootPlugin extends Plugin
         currentTaskKey = null;
         currentTaskName = DEFAULT_TASK;
         savePersistedState();
-        panel.rebuild();
+        pushPanelState();
     }
 
     void resetAllTasks()
@@ -330,7 +320,7 @@ public class SlayerLootPlugin extends Plugin
         currentTaskKey = null;
         currentTaskName = DEFAULT_TASK;
         savePersistedState();
-        panel.rebuild();
+        pushPanelState();
     }
 
     void deleteTask(String taskKey)
@@ -347,22 +337,12 @@ public class SlayerLootPlugin extends Plugin
             currentTaskName = DEFAULT_TASK;
         }
         savePersistedState();
-        panel.rebuild();
+        pushPanelState();
     }
 
     String getCurrentTaskKey()
     {
         return currentTaskKey;
-    }
-
-    String getCurrentTaskName()
-    {
-        return currentTaskName;
-    }
-
-    int getCurrentTaskRemaining()
-    {
-        return currentTaskRemaining;
     }
 
     AsyncBufferedImage getItemIcon(int itemId, int quantity)
@@ -489,25 +469,32 @@ public class SlayerLootPlugin extends Plugin
         return Character.toUpperCase(taskName.charAt(0)) + taskName.substring(1);
     }
 
-    int getCurrentTaskOriginalAmount()
-    {
-        return currentTaskOriginal;
-    }
-
-    int getCurrentTaskCompletedCount()
-    {
-        int remain = currentTaskRemaining;
-        int original = currentTaskOriginal;
-        if (original <= 0 || remain < 0)
-        {
-            return 0;
-        }
-        return Math.max(0, original - remain);
-    }
-
-    boolean hasActiveSlayerTask()
+    private boolean hasActiveSlayerTask()
     {
         return currentTaskRemaining > 0;
+    }
+
+    /** Must be called on the client thread. */
+    private void pushPanelState()
+    {
+        if (panel == null)
+        {
+            return;
+        }
+
+        List<TaskLootRecord> snapshot = new ArrayList<>(taskRecords.size());
+        for (TaskLootRecord r : taskRecords.values())
+        {
+            snapshot.add(r.copy());
+        }
+
+        panel.setState(new PanelState(
+            snapshot,
+            currentTaskName,
+            currentTaskRemaining,
+            currentTaskOriginal,
+            hasActiveSlayerTask()
+        ));
     }
 
     private void trimTaskHistory()
