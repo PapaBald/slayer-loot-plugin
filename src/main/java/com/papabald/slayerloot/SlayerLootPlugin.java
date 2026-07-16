@@ -20,7 +20,6 @@ import net.runelite.api.ItemComposition;
 import net.runelite.api.NPCComposition;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
-import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.DBTableID;
 import net.runelite.api.gameval.VarPlayerID;
@@ -139,14 +138,6 @@ public class SlayerLootPlugin extends Plugin
     @Subscribe
     public void onGameStateChanged(GameStateChanged event)
     {
-        refreshCurrentTask();
-    }
-
-    @Subscribe
-    public void onStatChanged(StatChanged event)
-    {
-        // Slayer plugins commonly update task state when stats/vars move.
-        // We keep this cheap and simply refresh our current task pointer.
         refreshCurrentTask();
     }
 
