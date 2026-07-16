@@ -6,7 +6,6 @@ import com.google.inject.Provides;
 import java.awt.image.BufferedImage;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,11 +15,12 @@ import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ChatMessageType;
+import net.runelite.api.GameState;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.NPCComposition;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
-import net.runelite.api.events.StatChanged;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.DBTableID;
 import net.runelite.api.gameval.VarPlayerID;
@@ -74,6 +74,11 @@ public class SlayerLootPlugin extends Plugin
     private String currentTaskKey;
     private int currentTaskRemaining;
     private int currentTaskOriginal;
+    private int cachedTaskId = -1;
+    private int cachedBossId = -1;
+    private String cachedTaskName = "";
+    private boolean saveQueued;
+    private boolean panelDirty;
 
     private SlayerLootPanel panel;
     private NavigationButton navButton;
@@ -111,11 +116,10 @@ public class SlayerLootPlugin extends Plugin
         clientToolbar.addNavigation(navButton);
 
         loadPersistedState();
-        panel.rebuild();
         clientThread.invoke(() ->
         {
             refreshCurrentTask();
-            panel.rebuild();
+            pushPanelState();
         });
     }
 
@@ -139,15 +143,25 @@ public class SlayerLootPlugin extends Plugin
     @Subscribe
     public void onGameStateChanged(GameStateChanged event)
     {
-        refreshCurrentTask();
+        if (event.getGameState() == GameState.LOGGED_IN)
+        {
+            refreshCurrentTask();
+        }
     }
 
     @Subscribe
-    public void onStatChanged(StatChanged event)
+    public void onGameTick(GameTick tick)
     {
-        // Slayer plugins commonly update task state when stats/vars move.
-        // We keep this cheap and simply refresh our current task pointer.
-        refreshCurrentTask();
+        if (saveQueued)
+        {
+            saveQueued = false;
+            savePersistedState();
+        }
+
+        if (panelDirty)
+        {
+            pushPanelState();
+        }
     }
 
     @Subscribe
@@ -164,10 +178,7 @@ public class SlayerLootPlugin extends Plugin
             || varp == VarPlayerID.SLAYER_TARGET)
         {
             refreshCurrentTask();
-            if (panel != null)
-            {
-                panel.rebuild();
-            }
+            panelDirty = true;
         }
     }
 
@@ -208,7 +219,7 @@ public class SlayerLootPlugin extends Plugin
             currentTaskName = DEFAULT_TASK;
             currentTaskKey = null;
             savePersistedState();
-            panel.rebuild();
+            pushPanelState();
         }
     }
 
@@ -257,95 +268,95 @@ public class SlayerLootPlugin extends Plugin
                 record.addLoot(itemId, itemName, qty, geValue);
             }
             trimTaskHistory();
-            savePersistedState();
-            panel.rebuild();
+            saveQueued = true;
+            panelDirty = true;
         });
-    }
-
-    Collection<TaskLootRecord> getTaskRecords()
-    {
-        return taskRecords.values();
     }
 
     void setItemIncluded(String taskKey, int itemId, boolean included)
     {
-        TaskLootRecord record = taskRecords.get(taskKey);
-        if (record == null)
+        clientThread.invoke(() ->
         {
-            return;
-        }
+            TaskLootRecord record = taskRecords.get(taskKey);
+            if (record == null)
+            {
+                return;
+            }
 
-        record.setItemExcluded(itemId, !included);
-        savePersistedState();
-        panel.rebuild();
+            record.setItemExcluded(itemId, !included);
+            savePersistedState();
+            pushPanelState();
+        });
     }
 
     void setTaskHidden(String taskKey, boolean hidden)
     {
-        TaskLootRecord record = taskRecords.get(taskKey);
-        if (record == null)
+        clientThread.invoke(() ->
         {
-            return;
-        }
+            TaskLootRecord record = taskRecords.get(taskKey);
+            if (record == null)
+            {
+                return;
+            }
 
-        record.setHidden(hidden);
-        savePersistedState();
-        panel.rebuild();
+            record.setHidden(hidden);
+            savePersistedState();
+            pushPanelState();
+        });
     }
 
     void resetCurrentTask()
     {
-        if (currentTaskKey == null)
+        clientThread.invoke(() ->
         {
-            return;
-        }
+            if (currentTaskKey == null)
+            {
+                return;
+            }
 
-        taskRecords.remove(currentTaskKey);
-        currentTaskKey = null;
-        currentTaskName = DEFAULT_TASK;
-        savePersistedState();
-        panel.rebuild();
+            taskRecords.remove(currentTaskKey);
+            currentTaskKey = null;
+            currentTaskName = DEFAULT_TASK;
+            savePersistedState();
+            pushPanelState();
+        });
     }
 
     void resetAllTasks()
     {
-        taskRecords.clear();
-        currentTaskKey = null;
-        currentTaskName = DEFAULT_TASK;
-        savePersistedState();
-        panel.rebuild();
+        clientThread.invoke(() ->
+        {
+            taskRecords.clear();
+            currentTaskKey = null;
+            currentTaskName = DEFAULT_TASK;
+            savePersistedState();
+            pushPanelState();
+        });
     }
 
     void deleteTask(String taskKey)
     {
-        if (taskKey == null || !taskRecords.containsKey(taskKey))
+        clientThread.invoke(() ->
         {
-            return;
-        }
+            if (taskKey == null || !taskRecords.containsKey(taskKey))
+            {
+                return;
+            }
 
-        taskRecords.remove(taskKey);
-        if (taskKey.equals(currentTaskKey))
-        {
-            currentTaskKey = null;
-            currentTaskName = DEFAULT_TASK;
-        }
-        savePersistedState();
-        panel.rebuild();
+            taskRecords.remove(taskKey);
+            if (taskKey.equals(currentTaskKey))
+            {
+                currentTaskKey = null;
+                currentTaskName = DEFAULT_TASK;
+            }
+            savePersistedState();
+            pushPanelState();
+        });
     }
 
     String getCurrentTaskKey()
     {
         return currentTaskKey;
-    }
-
-    String getCurrentTaskName()
-    {
-        return currentTaskName;
-    }
-
-    int getCurrentTaskRemaining()
-    {
-        return currentTaskRemaining;
     }
 
     AsyncBufferedImage getItemIcon(int itemId, int quantity)
@@ -356,7 +367,6 @@ public class SlayerLootPlugin extends Plugin
 
     private TaskLootRecord getOrCreateCurrentRecord()
     {
-        refreshCurrentTask();
         if (currentTaskKey == null)
         {
             currentTaskName = DEFAULT_TASK;
@@ -398,6 +408,29 @@ public class SlayerLootPlugin extends Plugin
             return "";
         }
 
+        int bossId = taskId == 98 ? client.getVarbitValue(VarbitID.SLAYER_TARGET_BOSSID) : -1;
+
+        // Hot path: task identity is unchanged, so the resolved name is too.
+        if (taskId == cachedTaskId && bossId == cachedBossId)
+        {
+            return cachedTaskName;
+        }
+
+        String resolved = resolveTaskNameFromDb(taskId, bossId);
+        if (resolved.isEmpty())
+        {
+            // Don't cache failures — the DB may just not be loaded yet (e.g. mid-login).
+            return "";
+        }
+
+        cachedTaskId = taskId;
+        cachedBossId = bossId;
+        cachedTaskName = resolved;
+        return resolved;
+    }
+
+    private String resolveTaskNameFromDb(int taskId, int bossId)
+    {
         int taskDbRow;
         if (taskId == 98)
         {
@@ -405,7 +438,7 @@ public class SlayerLootPlugin extends Plugin
                 DBTableID.SlayerTaskSublist.ID,
                 DBTableID.SlayerTaskSublist.COL_TASK_SUBTABLE_ID,
                 0,
-                client.getVarbitValue(VarbitID.SLAYER_TARGET_BOSSID)
+                bossId
             );
             if (bossRows.isEmpty())
             {
@@ -450,25 +483,33 @@ public class SlayerLootPlugin extends Plugin
         return Character.toUpperCase(taskName.charAt(0)) + taskName.substring(1);
     }
 
-    int getCurrentTaskOriginalAmount()
-    {
-        return currentTaskOriginal;
-    }
-
-    int getCurrentTaskCompletedCount()
-    {
-        int remain = currentTaskRemaining;
-        int original = currentTaskOriginal;
-        if (original <= 0 || remain < 0)
-        {
-            return 0;
-        }
-        return Math.max(0, original - remain);
-    }
-
-    boolean hasActiveSlayerTask()
+    private boolean hasActiveSlayerTask()
     {
         return currentTaskRemaining > 0;
+    }
+
+    /** Must be called on the client thread. */
+    private void pushPanelState()
+    {
+        panelDirty = false;
+        if (panel == null)
+        {
+            return;
+        }
+
+        List<TaskLootRecord> snapshot = new ArrayList<>(taskRecords.size());
+        for (TaskLootRecord r : taskRecords.values())
+        {
+            snapshot.add(r.copy());
+        }
+
+        panel.setState(new PanelState(
+            snapshot,
+            currentTaskName,
+            currentTaskRemaining,
+            currentTaskOriginal,
+            hasActiveSlayerTask()
+        ));
     }
 
     private void trimTaskHistory()
@@ -485,7 +526,7 @@ public class SlayerLootPlugin extends Plugin
     {
         currentTaskName = taskName;
         currentTaskKey = currentTaskName + "-" + Instant.now();
-        savePersistedState();
+        saveQueued = true;
     }
 
     private void savePersistedState()
