@@ -302,6 +302,8 @@ class SlayerLootPanel extends PluginPanel
         }
         collapsedTasks.entrySet().removeIf(e -> !validKeys.contains(e.getKey()));
 
+        int scroll = scrollPane.getVerticalScrollBar().getValue();
+
         content.removeAll();
         addActiveTaskSummary();
         List<TaskLootRecord> records = new ArrayList<>(state.records);
@@ -338,6 +340,9 @@ class SlayerLootPanel extends PluginPanel
 
         content.revalidate();
         content.repaint();
+
+        // Deferred: the scrollbar's max isn't recomputed until after layout runs.
+        SwingUtilities.invokeLater(() -> scrollPane.getVerticalScrollBar().setValue(scroll));
     }
 
     private void addActiveTaskSummary()
@@ -599,7 +604,14 @@ class SlayerLootPanel extends PluginPanel
                 // excluded state so plugin.setItemIncluded flips it.
                 if (SwingUtilities.isLeftMouseButton(e))
                 {
-                    plugin.setItemIncluded(taskKey, item.getItemId(), item.isExcluded());
+                    boolean nowExcluded = !item.isExcluded();
+
+                    // Flip the snapshot copy and repaint this one tile immediately.
+                    // The authoritative push will arrive shortly and agree with us.
+                    item.setExcluded(nowExcluded);
+                    applyIcon.run();
+
+                    plugin.setItemIncluded(taskKey, item.getItemId(), !nowExcluded);
                 }
             }
         });
