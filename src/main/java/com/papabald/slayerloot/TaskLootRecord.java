@@ -101,4 +101,15 @@ class TaskLootRecord
         item.restore(quantity, totalGeValue, excluded);
         items.put(itemId, item);
     }
+
+    TaskLootRecord copy()
+    {
+        TaskLootRecord c = new TaskLootRecord(taskKey, taskName, startedAt, kills);
+        c.hidden = hidden;
+        for (TaskLootItem i : items.values())
+        {
+            c.putRestoredItem(i.getItemId(), i.getItemName(), i.getQuantity(), i.getTotalGeValue(), i.isExcluded());
+        }
+        return c;
+    }
 }

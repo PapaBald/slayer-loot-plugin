@@ -60,6 +60,7 @@ class SlayerLootPanel extends PluginPanel
     private final JPanel content = new ContentPanel();
     private JScrollPane scrollPane;
     private final JToggleButton showHiddenTasks = new JToggleButton(ICON_EYE_OFF);
+    private volatile PanelState state = PanelState.EMPTY;
 
     /** Vertical-only scrolling content that forces children to fit the viewport width. */
     private static final class ContentPanel extends JPanel implements Scrollable
@@ -207,7 +208,7 @@ class SlayerLootPanel extends PluginPanel
             {
                 boolean collapse = collapsedTasks.values().stream().anyMatch(c -> !c);
                 collapsedTasks.replaceAll((k, v) -> collapse);
-                rebuild();
+                render();
             }
         );
 
@@ -235,7 +236,7 @@ class SlayerLootPanel extends PluginPanel
         showHiddenTasks.addActionListener(e ->
         {
             refreshShowHiddenTasksTooltip();
-            rebuild();
+            render();
         });
 
         JPanel togglesRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
@@ -286,54 +287,62 @@ class SlayerLootPanel extends PluginPanel
         }
     }
 
-    void rebuild()
+    void setState(PanelState state)
     {
-        SwingUtilities.invokeLater(() ->
+        this.state = state;
+        SwingUtilities.invokeLater(this::render);
+    }
+
+    private void render()
+    {
+        Set<String> validKeys = new HashSet<>();
+        for (TaskLootRecord r : state.records)
         {
-            Set<String> validKeys = new HashSet<>();
-            for (TaskLootRecord r : plugin.getTaskRecords())
+            validKeys.add(r.getTaskKey());
+        }
+        collapsedTasks.entrySet().removeIf(e -> !validKeys.contains(e.getKey()));
+
+        int scroll = scrollPane.getVerticalScrollBar().getValue();
+
+        content.removeAll();
+        addActiveTaskSummary();
+        List<TaskLootRecord> records = new ArrayList<>(state.records);
+        records.sort(Comparator.comparing(TaskLootRecord::getStartedAt).reversed());
+
+        if (records.isEmpty())
+        {
+            JLabel empty = new JLabel("No Slayer loot data yet.");
+            empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+            empty.setAlignmentX(Component.LEFT_ALIGNMENT);
+            content.add(empty);
+        }
+        else
+        {
+            int visibleCount = 0;
+            for (TaskLootRecord record : records)
             {
-                validKeys.add(r.getTaskKey());
+                if (addTaskCard(record))
+                {
+                    visibleCount++;
+                }
             }
-            collapsedTasks.entrySet().removeIf(e -> !validKeys.contains(e.getKey()));
 
-            content.removeAll();
-            addActiveTaskSummary();
-            List<TaskLootRecord> records = new ArrayList<>(plugin.getTaskRecords());
-            records.sort(Comparator.comparing(TaskLootRecord::getStartedAt).reversed());
-
-            if (records.isEmpty())
+            if (visibleCount == 0)
             {
-                JLabel empty = new JLabel("No Slayer loot data yet.");
+                JLabel empty = new JLabel("No visible tasks. Enable 'Show hidden tasks'.");
                 empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
                 empty.setAlignmentX(Component.LEFT_ALIGNMENT);
                 content.add(empty);
             }
-            else
-            {
-                int visibleCount = 0;
-                for (TaskLootRecord record : records)
-                {
-                    if (addTaskCard(record))
-                    {
-                        visibleCount++;
-                    }
-                }
+        }
 
-                if (visibleCount == 0)
-                {
-                    JLabel empty = new JLabel("No visible tasks. Enable 'Show hidden tasks'.");
-                    empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-                    empty.setAlignmentX(Component.LEFT_ALIGNMENT);
-                    content.add(empty);
-                }
-            }
+        refreshMasterCollapseButton();
 
-            refreshMasterCollapseButton();
+        content.revalidate();
+        content.repaint();
 
-            content.revalidate();
-            content.repaint();
-        });
+        // Deferred: the scrollbar's max isn't recomputed until after layout runs.
+        SwingUtilities.invokeLater(() -> scrollPane.getVerticalScrollBar().setValue(scroll));
     }
 
     private void addActiveTaskSummary()
@@ -347,18 +356,18 @@ class SlayerLootPanel extends PluginPanel
         ));
         activeTask.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        String taskName = plugin.hasActiveSlayerTask() ? plugin.getCurrentTaskName() : "No active task";
+        String taskName = state.hasActiveTask ? state.currentTaskName : "No active task";
         JLabel name = new JLabel("Current task: " + taskName);
         name.setFont(FontManager.getRunescapeBoldFont());
         name.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
         name.setAlignmentX(Component.LEFT_ALIGNMENT);
         activeTask.add(name);
 
-        if (plugin.hasActiveSlayerTask())
+        if (state.hasActiveTask)
         {
-            int completed = plugin.getCurrentTaskCompletedCount();
-            int remaining = plugin.getCurrentTaskRemaining();
-            int original = plugin.getCurrentTaskOriginalAmount();
+            int completed = state.completed();
+            int remaining = state.remaining;
+            int original = state.original;
             JLabel counts = new JLabel("Progress: " + NUMBER_FORMAT.format(completed) + "/" + NUMBER_FORMAT.format(original)
                 + " (" + NUMBER_FORMAT.format(remaining) + " left)");
             counts.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
@@ -392,7 +401,7 @@ class SlayerLootPanel extends PluginPanel
         collapseBtn.addActionListener(e ->
         {
             collapsedTasks.put(record.getTaskKey(), !collapsedTasks.getOrDefault(record.getTaskKey(), false));
-            rebuild();
+            render();
         });
 
         JButton hideBtn = iconOnlyButton(ICON_HIDE_MINUS, record.isHidden() ? "Show task in list" : "Hide task from list");
@@ -595,7 +604,14 @@ class SlayerLootPanel extends PluginPanel
                 // excluded state so plugin.setItemIncluded flips it.
                 if (SwingUtilities.isLeftMouseButton(e))
                 {
-                    plugin.setItemIncluded(taskKey, item.getItemId(), item.isExcluded());
+                    boolean nowExcluded = !item.isExcluded();
+
+                    // Flip the snapshot copy and repaint this one tile immediately.
+                    // The authoritative push will arrive shortly and agree with us.
+                    item.setExcluded(nowExcluded);
+                    applyIcon.run();
+
+                    plugin.setItemIncluded(taskKey, item.getItemId(), !nowExcluded);
                 }
             }
         });
