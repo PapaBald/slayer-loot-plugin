@@ -23,6 +23,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -462,36 +464,23 @@ class SlayerLootPanel extends PluginPanel
         taskCard.add(headerRow);
         taskCard.add(Box.createRigidArea(new Dimension(0, 2)));
 
-        JLabel valueLeft = new JLabel("Total");
-        valueLeft.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-        JLabel valueRight = new JLabel(QuantityFormatter.quantityToStackSize(record.getGrossProfit()) + " gp");
-        valueRight.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-        valueRight.setToolTipText("Gross: " + QuantityFormatter.quantityToStackSize(record.getGrossProfit()) + " gp"
-            + "  |  Actual: " + QuantityFormatter.quantityToStackSize(record.getActualProfit()) + " gp");
-
-        JPanel valueRow = new JPanel();
-        valueRow.setLayout(new BoxLayout(valueRow, BoxLayout.X_AXIS));
-        valueRow.setOpaque(false);
-        valueRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        valueRow.add(valueLeft);
-        valueRow.add(Box.createHorizontalGlue());
-        valueRow.add(valueRight);
-        valueRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, valueRight.getPreferredSize().height));
+        JPanel valueRow = valueRow("Total", formatGp(record.getGrossProfit()), ColorScheme.LIGHT_GRAY_COLOR);
+        valueRow.setToolTipText("Gross: " + formatGp(record.getGrossProfit())
+            + "  |  Actual: " + formatGp(record.getActualProfit()));
         taskCard.add(valueRow);
+        taskCard.add(valueRow("Actual", formatGp(record.getActualProfit()), ColorScheme.LIGHT_GRAY_COLOR));
 
-        JLabel actualLeft = new JLabel("Actual");
-        actualLeft.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-        JLabel actualRight = new JLabel(QuantityFormatter.quantityToStackSize(record.getActualProfit()) + " gp");
-        actualRight.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-        JPanel actualRow = new JPanel();
-        actualRow.setLayout(new BoxLayout(actualRow, BoxLayout.X_AXIS));
-        actualRow.setOpaque(false);
-        actualRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        actualRow.add(actualLeft);
-        actualRow.add(Box.createHorizontalGlue());
-        actualRow.add(actualRight);
-        actualRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, actualRight.getPreferredSize().height));
-        taskCard.add(actualRow);
+        if (state.suppliesEnabled)
+        {
+            long supplyCost = record.getSupplyCost();
+            long netProfit = record.getNetProfit();
+            taskCard.add(valueRow("Supplies", (supplyCost > 0 ? "-" : "") + formatGp(supplyCost), ColorScheme.LIGHT_GRAY_COLOR));
+
+            JPanel profitRow = valueRow("Profit", formatGp(netProfit),
+                netProfit >= 0 ? ColorScheme.PROGRESS_COMPLETE_COLOR : ColorScheme.PROGRESS_ERROR_COLOR);
+            profitRow.setToolTipText("Actual loot minus supplies used");
+            taskCard.add(profitRow);
+        }
         taskCard.add(Box.createRigidArea(new Dimension(0, 6)));
 
         if (collapsed)
@@ -502,20 +491,88 @@ class SlayerLootPanel extends PluginPanel
             return true;
         }
 
+        String taskKey = record.getTaskKey();
         List<TaskLootItem> items = new ArrayList<>(record.getItems());
         items.sort(Comparator.comparingLong(TaskLootItem::getTotalGeValue).reversed());
+        List<TaskLootItem> supplies = state.suppliesEnabled ? new ArrayList<>(record.getSupplies()) : new ArrayList<>();
+        supplies.sort(Comparator.comparingLong(TaskLootItem::getTotalGeValue).reversed());
+
         if (items.isEmpty())
         {
-            JLabel noItems = new JLabel("No drops recorded yet.");
-            noItems.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-            noItems.setAlignmentX(Component.LEFT_ALIGNMENT);
-            taskCard.add(noItems);
-            clampCardHeight(taskCard);
-            content.add(taskCard);
-            content.add(Box.createRigidArea(new Dimension(0, 8)));
-            return true;
+            taskCard.add(sectionLabel("No drops recorded yet."));
+        }
+        else
+        {
+            if (!supplies.isEmpty())
+            {
+                taskCard.add(sectionLabel("Drops"));
+                taskCard.add(Box.createRigidArea(new Dimension(0, 2)));
+            }
+            taskCard.add(buildItemGrid(items, item -> buildItemTile(item, "Actual",
+                excluded -> plugin.setItemIncluded(taskKey, item.getItemId(), !excluded))));
         }
 
+        if (!supplies.isEmpty())
+        {
+            taskCard.add(Box.createRigidArea(new Dimension(0, 6)));
+            taskCard.add(sectionLabel("Supplies used"));
+            taskCard.add(Box.createRigidArea(new Dimension(0, 2)));
+            taskCard.add(buildItemGrid(supplies, supply -> buildItemTile(supply, "Supplies",
+                excluded -> plugin.setSupplyIncluded(taskKey, supply.getItemId(), !excluded))));
+        }
+
+        if (!items.isEmpty() || !supplies.isEmpty())
+        {
+            JLabel hint = sectionLabel("Click an item to exclude it from totals");
+            taskCard.add(Box.createRigidArea(new Dimension(0, 4)));
+            taskCard.add(hint);
+        }
+
+        clampCardHeight(taskCard);
+        content.add(taskCard);
+        content.add(Box.createRigidArea(new Dimension(0, 8)));
+        return true;
+    }
+
+    private static void clampCardHeight(JPanel taskCard)
+    {
+        taskCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, taskCard.getPreferredSize().height));
+    }
+
+    private static String formatGp(long value)
+    {
+        return QuantityFormatter.quantityToStackSize(value) + " gp";
+    }
+
+    private static JLabel sectionLabel(String text)
+    {
+        JLabel label = new JLabel(text);
+        label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return label;
+    }
+
+    /** A "label ........ value" row stretched to the card width. */
+    private static JPanel valueRow(String label, String value, Color valueColor)
+    {
+        JLabel left = new JLabel(label);
+        left.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+        JLabel right = new JLabel(value);
+        right.setForeground(valueColor);
+
+        JPanel row = new JPanel();
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.add(left);
+        row.add(Box.createHorizontalGlue());
+        row.add(right);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, right.getPreferredSize().height));
+        return row;
+    }
+
+    private static JPanel buildItemGrid(List<TaskLootItem> items, Function<TaskLootItem, JPanel> tileFactory)
+    {
         // Fixed 5-column grid mirrors the official Loot Tracker
         // (LootTrackerBox#ITEMS_PER_ROW). GridLayout stretches to whatever
         // width the side panel actually gives us, so we don't need any
@@ -531,7 +588,7 @@ class SlayerLootPanel extends PluginPanel
         {
             if (i < items.size())
             {
-                itemsPanel.add(buildItemTile(record.getTaskKey(), items.get(i)));
+                itemsPanel.add(tileFactory.apply(items.get(i)));
             }
             else
             {
@@ -544,26 +601,14 @@ class SlayerLootPanel extends PluginPanel
 
         // Cap height so BoxLayout doesn't grow the grid vertically beyond what it needs.
         itemsPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, itemsPanel.getPreferredSize().height));
-        taskCard.add(itemsPanel);
-
-        JLabel dropsHint = new JLabel("Click an item to exclude in actual");
-        dropsHint.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-        dropsHint.setAlignmentX(Component.LEFT_ALIGNMENT);
-        taskCard.add(Box.createRigidArea(new Dimension(0, 4)));
-        taskCard.add(dropsHint);
-
-        clampCardHeight(taskCard);
-        content.add(taskCard);
-        content.add(Box.createRigidArea(new Dimension(0, 8)));
-        return true;
+        return itemsPanel;
     }
 
-    private static void clampCardHeight(JPanel taskCard)
-    {
-        taskCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, taskCard.getPreferredSize().height));
-    }
-
-    private JPanel buildItemTile(String taskKey, TaskLootItem item)
+    /**
+     * @param totalName  the total this item counts toward, for the tooltip ("Actual" or "Supplies")
+     * @param onToggle   called with the new excluded state when the tile is clicked
+     */
+    private JPanel buildItemTile(TaskLootItem item, String totalName, Consumer<Boolean> onToggle)
     {
         // Slot mirrors Loot Tracker's slotContainer: a small darker-gray cell
         // that lets GridLayout dictate the cell width so 5 tiles always fit.
@@ -584,13 +629,12 @@ class SlayerLootPanel extends PluginPanel
         applyIcon.run();
         img.onLoaded(() -> SwingUtilities.invokeLater(applyIcon));
 
-        String valueText = QuantityFormatter.quantityToStackSize(item.getTotalGeValue()) + " gp";
         String tip = "<html><b>" + escapeHtml(item.getItemName()) + "</b><br>"
             + "Quantity: " + NUMBER_FORMAT.format(item.getQuantity()) + "<br>"
-            + "Total: " + valueText
-            + (item.isExcluded() ? "<br><i>Excluded from Actual</i>" : "")
+            + "Total: " + formatGp(item.getTotalGeValue())
+            + (item.isExcluded() ? "<br><i>Excluded from " + totalName + "</i>" : "")
             + "<br><br><i>Click to "
-            + (item.isExcluded() ? "include in Actual" : "exclude from Actual")
+            + (item.isExcluded() ? "include in " : "exclude from ") + totalName
             + "</i></html>";
         iconLabel.setToolTipText(tip);
         iconLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -600,8 +644,7 @@ class SlayerLootPanel extends PluginPanel
             @Override
             public void mouseClicked(MouseEvent e)
             {
-                // Left-click toggles inclusion. Pass the inverse of the current
-                // excluded state so plugin.setItemIncluded flips it.
+                // Left-click toggles exclusion.
                 if (SwingUtilities.isLeftMouseButton(e))
                 {
                     boolean nowExcluded = !item.isExcluded();
@@ -611,7 +654,7 @@ class SlayerLootPanel extends PluginPanel
                     item.setExcluded(nowExcluded);
                     applyIcon.run();
 
-                    plugin.setItemIncluded(taskKey, item.getItemId(), !nowExcluded);
+                    onToggle.accept(nowExcluded);
                 }
             }
         });

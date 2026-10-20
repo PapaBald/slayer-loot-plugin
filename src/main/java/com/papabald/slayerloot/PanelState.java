@@ -6,21 +6,24 @@ import java.util.List;
 /** Immutable snapshot handed from the client thread to the EDT. */
 class PanelState
 {
-    static final PanelState EMPTY = new PanelState(Collections.emptyList(), "Unknown Task", 0, 0, false);
+    static final PanelState EMPTY = new PanelState(Collections.emptyList(), "Unknown Task", 0, 0, false, false);
 
     final List<TaskLootRecord> records;
     final String currentTaskName;
     final int remaining;
     final int original;
     final boolean hasActiveTask;
+    final boolean suppliesEnabled;
 
-    PanelState(List<TaskLootRecord> records, String currentTaskName, int remaining, int original, boolean hasActiveTask)
+    PanelState(List<TaskLootRecord> records, String currentTaskName, int remaining, int original, boolean hasActiveTask,
+        boolean suppliesEnabled)
     {
         this.records = Collections.unmodifiableList(records);
         this.currentTaskName = currentTaskName;
         this.remaining = remaining;
         this.original = original;
         this.hasActiveTask = hasActiveTask;
+        this.suppliesEnabled = suppliesEnabled;
     }
 
     int completed()

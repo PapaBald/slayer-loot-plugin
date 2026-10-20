@@ -13,6 +13,7 @@ class TaskLootRecord
     private int kills;
     private boolean hidden;
     private final Map<Integer, TaskLootItem> items = new LinkedHashMap<>();
+    private final Map<Integer, TaskLootItem> supplies = new LinkedHashMap<>();
 
     TaskLootRecord(String taskKey, String taskName)
     {
@@ -56,6 +57,41 @@ class TaskLootRecord
     {
         TaskLootItem item = items.computeIfAbsent(itemId, ignored -> new TaskLootItem(itemId, itemName));
         item.add(qty, geValue);
+    }
+
+    Collection<TaskLootItem> getSupplies()
+    {
+        return supplies.values();
+    }
+
+    void addSupply(int itemId, String itemName, int qty, long value)
+    {
+        TaskLootItem supply = supplies.computeIfAbsent(itemId, ignored -> new TaskLootItem(itemId, itemName));
+        supply.add(qty, value);
+    }
+
+    void setSupplyExcluded(int itemId, boolean excluded)
+    {
+        TaskLootItem supply = supplies.get(itemId);
+        if (supply != null)
+        {
+            supply.setExcluded(excluded);
+        }
+    }
+
+    /** Value of supplies used on this task, leaving out any the user excluded. */
+    long getSupplyCost()
+    {
+        return supplies.values().stream()
+            .filter(supply -> !supply.isExcluded())
+            .mapToLong(TaskLootItem::getTotalGeValue)
+            .sum();
+    }
+
+    /** Actual loot value minus supplies used. */
+    long getNetProfit()
+    {
+        return getActualProfit() - getSupplyCost();
     }
 
     void setItemExcluded(int itemId, boolean excluded)
@@ -102,6 +138,13 @@ class TaskLootRecord
         items.put(itemId, item);
     }
 
+    void putRestoredSupply(int itemId, String itemName, int quantity, long totalValue, boolean excluded)
+    {
+        TaskLootItem supply = new TaskLootItem(itemId, itemName);
+        supply.restore(quantity, totalValue, excluded);
+        supplies.put(itemId, supply);
+    }
+
     TaskLootRecord copy()
     {
         TaskLootRecord c = new TaskLootRecord(taskKey, taskName, startedAt, kills);
@@ -109,6 +152,10 @@ class TaskLootRecord
         for (TaskLootItem i : items.values())
         {
             c.putRestoredItem(i.getItemId(), i.getItemName(), i.getQuantity(), i.getTotalGeValue(), i.isExcluded());
+        }
+        for (TaskLootItem s : supplies.values())
+        {
+            c.putRestoredSupply(s.getItemId(), s.getItemName(), s.getQuantity(), s.getTotalGeValue(), s.isExcluded());
         }
         return c;
     }

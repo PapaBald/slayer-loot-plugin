@@ -24,16 +24,8 @@ class SlayerLootPersistence
             task.kills = record.getKills();
             task.startedAt = record.getStartedAt().toString();
             task.hidden = record.isHidden();
-            record.getItems().forEach(item ->
-            {
-                PersistedItem persistedItem = new PersistedItem();
-                persistedItem.itemId = item.getItemId();
-                persistedItem.itemName = item.getItemName();
-                persistedItem.quantity = item.getQuantity();
-                persistedItem.totalGeValue = item.getTotalGeValue();
-                persistedItem.excluded = item.isExcluded();
-                task.items.add(persistedItem);
-            });
+            record.getItems().forEach(item -> task.items.add(PersistedItem.from(item)));
+            record.getSupplies().forEach(supply -> task.supplies.add(PersistedItem.from(supply)));
             state.tasks.add(task);
         }
         return state;
@@ -62,6 +54,20 @@ class SlayerLootPersistence
                     persistedItem.excluded
                 );
             }
+            // Tasks saved before supply tracking existed have no supplies list.
+            if (persistedTask.supplies != null)
+            {
+                for (PersistedItem persistedSupply : persistedTask.supplies)
+                {
+                    record.putRestoredSupply(
+                        persistedSupply.itemId,
+                        persistedSupply.itemName,
+                        persistedSupply.quantity,
+                        persistedSupply.totalGeValue,
+                        persistedSupply.excluded
+                    );
+                }
+            }
             records.add(record);
         }
         return records;
@@ -87,6 +93,7 @@ class SlayerLootPersistence
         int kills;
         boolean hidden;
         List<PersistedItem> items = new ArrayList<>();
+        List<PersistedItem> supplies = new ArrayList<>();
     }
 
     static class PersistedItem
@@ -96,5 +103,16 @@ class SlayerLootPersistence
         int quantity;
         long totalGeValue;
         boolean excluded;
+
+        static PersistedItem from(TaskLootItem item)
+        {
+            PersistedItem persistedItem = new PersistedItem();
+            persistedItem.itemId = item.getItemId();
+            persistedItem.itemName = item.getItemName();
+            persistedItem.quantity = item.getQuantity();
+            persistedItem.totalGeValue = item.getTotalGeValue();
+            persistedItem.excluded = item.isExcluded();
+            return persistedItem;
+        }
     }
 }

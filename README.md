@@ -11,6 +11,7 @@ While the standard Loot Tracker shows totals by NPC, Slayer Loot rolls every dro
 - **Live progress readout.** "Current task" panel mirrors the in-game Slayer counter (`X/Y left`) and updates the moment a kill ticks the counter — even on kills that drop nothing.
 - **Click-to-exclude.** Left-click any drop to remove it from the **Actual** total; click again to include it. The icon dims and shows a red X while excluded.
 - **Hide / delete tasks.** Compact icon controls per task: collapse, hide from the main list, or delete the record entirely. A master toggle collapses or expands every card at once.
+- **Profit after supplies.** Food, potions, runes, ammo, teleports and cannonballs used on task are subtracted from the loot to show your real profit. Supplies get their own grid on each task card and can be excluded with a click, just like drops.
 - **Persistence.** Task history is saved to your RuneLite config (toggle in plugin settings) and restored on startup.
 
 ## Configuration
@@ -19,6 +20,24 @@ While the standard Loot Tracker shows totals by NPC, Slayer Loot rolls every dro
 | --- | --- | --- |
 | `Persist across sessions` | `true` | Save tracked task history to your RuneLite config so it survives restarts. |
 | `Max stored tasks` | `100` | Cap on how many completed task records are retained. |
+| `Track supplies` | `true` | Count supplies used on task and show profit after supplies. |
+| `Stop counting after` | `5 min` | Supplies stop counting toward the task after this long without a task kill. |
+| `Count before first kill` | `30 s` | Supplies used this long before the first kill of a trip (boosting, teleporting in) still count. |
+
+## How supplies are counted
+
+Each game tick the plugin compares what you're carrying — inventory, worn equipment, rune pouch and the cannonballs loaded in your cannon — with the previous tick. Anything that went down counts as used and is priced at its current GE value. Potions and charged jewellery are counted per dose/charge (a sip from a 4-dose costs a quarter of a 4-dose).
+
+Supplies only count while you're actively on task: from your first task kill until no task kill has happened for the **Stop counting after** time. Banking, shops, trades, the Grand Exchange, dying and dropping items are not counted as supplies.
+
+Known limits:
+
+- Charged weapons (blowpipe, tridents, scythe, etc.) are not tracked.
+- Untradeable items are worth 0 gp and are left out.
+- Loading granite cannonballs counts them as used when loaded rather than per shot.
+- Items moved into a looting bag are counted as used.
+
+If something is counted that shouldn't be, click it in the Supplies grid to exclude it.
 
 ## How tasks are matched
 
