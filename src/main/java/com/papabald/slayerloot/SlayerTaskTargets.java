@@ -1,11 +1,13 @@
 package com.papabald.slayerloot;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
@@ -23,6 +25,8 @@ import java.util.regex.Pattern;
 final class SlayerTaskTargets
 {
     private static final Map<String, List<String>> TASK_ALIASES;
+    /** Lowercased task name -> compiled whole-word patterns for every NPC that satisfies it. */
+    private static final Map<String, List<Pattern>> TARGET_PATTERNS = new ConcurrentHashMap<>();
 
     static
     {
@@ -124,39 +128,52 @@ final class SlayerTaskTargets
             return false;
         }
 
+        for (Pattern target : TARGET_PATTERNS.computeIfAbsent(task, SlayerTaskTargets::buildTargetPatterns))
+        {
+            if (target.matcher(npc).find())
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Compiles every target name for a task once. The task name is fixed for
+     * the length of an assignment, so kills reuse the cached patterns rather
+     * than recompiling them for each alias on every drop.
+     */
+    private static List<Pattern> buildTargetPatterns(String task)
+    {
+        List<Pattern> patterns = new ArrayList<>();
+
         // Singular form of the task name (e.g. "dogs" -> "dog") is always a
         // valid target — same rule the Slayer plugin applies in
         // rebuildTargetNames() with replaceAll("s$", "").
-        if (wholeWordMatch(npc, task.replaceAll("s$", "")))
-        {
-            return true;
-        }
+        addWholeWordPattern(patterns, task.replaceAll("s$", ""));
 
         List<String> aliases = TASK_ALIASES.get(task);
         if (aliases != null)
         {
             for (String alias : aliases)
             {
-                if (wholeWordMatch(npc, alias.toLowerCase(Locale.ROOT)))
-                {
-                    return true;
-                }
+                addWholeWordPattern(patterns, alias.toLowerCase(Locale.ROOT));
             }
         }
 
-        return false;
+        return Collections.unmodifiableList(patterns);
     }
 
-    private static boolean wholeWordMatch(String haystack, String needle)
+    private static void addWholeWordPattern(List<Pattern> patterns, String needle)
     {
         if (needle == null || needle.isEmpty())
         {
-            return false;
+            return;
         }
 
         // Same boundary semantics as SlayerPlugin#targetNamePattern:
         // (?:\s|^)<target>(?:\s|$), case-insensitive.
         String regex = "(?:\\s|^)" + Pattern.quote(needle) + "(?:\\s|$)";
-        return Pattern.compile(regex, Pattern.CASE_INSENSITIVE).matcher(haystack).find();
+        patterns.add(Pattern.compile(regex, Pattern.CASE_INSENSITIVE));
     }
 }
