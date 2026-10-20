@@ -217,7 +217,7 @@ class SlayerLootPanel extends PluginPanel
         collapseRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         collapseRow.add(masterCollapseToggleBtn);
         JLabel collapseHint = new JLabel("Collapse / expand task sections");
-        collapseHint.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+        collapseHint.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
         collapseRow.add(collapseHint);
 
         showHiddenTasks.setIcon(ICON_EYE_OFF);
@@ -244,7 +244,7 @@ class SlayerLootPanel extends PluginPanel
         togglesRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         togglesRow.add(showHiddenTasks);
         JLabel hiddenHint = new JLabel("Show hidden tasks");
-        hiddenHint.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+        hiddenHint.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
         togglesRow.add(hiddenHint);
 
         controls.add(resets);
@@ -463,7 +463,7 @@ class SlayerLootPanel extends PluginPanel
         taskCard.add(Box.createRigidArea(new Dimension(0, 2)));
 
         JLabel valueLeft = new JLabel("Total");
-        valueLeft.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+        valueLeft.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
         JLabel valueRight = new JLabel(QuantityFormatter.quantityToStackSize(record.getGrossProfit()) + " gp");
         valueRight.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
         valueRight.setToolTipText("Gross: " + QuantityFormatter.quantityToStackSize(record.getGrossProfit()) + " gp"
@@ -480,9 +480,9 @@ class SlayerLootPanel extends PluginPanel
         taskCard.add(valueRow);
 
         JLabel actualLeft = new JLabel("Actual");
-        actualLeft.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+        actualLeft.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
         JLabel actualRight = new JLabel(QuantityFormatter.quantityToStackSize(record.getActualProfit()) + " gp");
-        actualRight.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+        actualRight.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
         JPanel actualRow = new JPanel();
         actualRow.setLayout(new BoxLayout(actualRow, BoxLayout.X_AXIS));
         actualRow.setOpaque(false);
@@ -507,7 +507,7 @@ class SlayerLootPanel extends PluginPanel
         if (items.isEmpty())
         {
             JLabel noItems = new JLabel("No drops recorded yet.");
-            noItems.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+            noItems.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
             noItems.setAlignmentX(Component.LEFT_ALIGNMENT);
             taskCard.add(noItems);
             clampCardHeight(taskCard);
@@ -547,7 +547,7 @@ class SlayerLootPanel extends PluginPanel
         taskCard.add(itemsPanel);
 
         JLabel dropsHint = new JLabel("Click an item to exclude in actual");
-        dropsHint.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+        dropsHint.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
         dropsHint.setAlignmentX(Component.LEFT_ALIGNMENT);
         taskCard.add(Box.createRigidArea(new Dimension(0, 4)));
         taskCard.add(dropsHint);
