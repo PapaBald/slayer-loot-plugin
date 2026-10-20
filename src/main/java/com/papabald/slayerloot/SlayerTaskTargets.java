@@ -148,7 +148,7 @@ final class SlayerTaskTargets
         List<Pattern> patterns = new ArrayList<>();
 
         // Singular form of the task name (e.g. "dogs" -> "dog") is always a
-        // valid target — same rule the Slayer plugin applies in
+        // valid target, using the same rule the Slayer plugin applies in
         // rebuildTargetNames() with replaceAll("s$", "").
         addWholeWordPattern(patterns, task.replaceAll("s$", ""));
 

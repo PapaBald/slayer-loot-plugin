@@ -256,7 +256,7 @@ public class SlayerLootPlugin extends Plugin
         // The Slayer task counters are stored in player varps, so we only
         // refresh when one of those specifically changes. This is what makes
         // the panel update on kills that produce no loot/XP events (e.g. a
-        // plain Rat dropping nothing visible) — the server still ticks
+        // plain Rat dropping nothing visible). The server still ticks
         // SLAYER_COUNT, and we listen for that here.
         int varp = event.getVarpId();
         if (varp == VarPlayerID.SLAYER_COUNT
@@ -534,7 +534,7 @@ public class SlayerLootPlugin extends Plugin
         String resolved = resolveTaskNameFromDb(taskId, bossId);
         if (resolved.isEmpty())
         {
-            // Don't cache failures — the DB may just not be loaded yet (e.g. mid-login).
+            // Don't cache failures, the DB may just not be loaded yet (e.g. mid-login).
             return "";
         }
 

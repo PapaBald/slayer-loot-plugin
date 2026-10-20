@@ -47,7 +47,7 @@ import net.runelite.client.util.QuantityFormatter;
 class SlayerLootPanel extends PluginPanel
 {
     private static final int ICON_BTN_SIZE = 22;
-    /** Cached raster icons — Runescape fonts do not draw carets reliably. */
+    /** Cached raster icons, because Runescape fonts do not draw carets reliably. */
     private static final ImageIcon ICON_CARET_UP = rasterCaretUp(ColorScheme.LIGHT_GRAY_COLOR);
     private static final ImageIcon ICON_CARET_DOWN = rasterCaretDown(ColorScheme.LIGHT_GRAY_COLOR);
     private static final ImageIcon ICON_HIDE_MINUS = rasterMinus(ColorScheme.LIGHT_GRAY_COLOR);
@@ -260,8 +260,8 @@ class SlayerLootPanel extends PluginPanel
     private void refreshShowHiddenTasksTooltip()
     {
         showHiddenTasks.setToolTipText(showHiddenTasks.isSelected()
-            ? "Currently showing hidden tasks — click to hide them"
-            : "Currently hiding hidden tasks — click to show them");
+            ? "Currently showing hidden tasks. Click to hide them"
+            : "Currently hiding hidden tasks. Click to show them");
     }
 
     /** If any panel is expanded (\u2260 collapsed), next click collapses everything; otherwise expands everything. */
